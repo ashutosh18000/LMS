@@ -1,6 +1,164 @@
 # Multi-tenant Leave Management System Backend
 
-Multi-tenant Leave Management System backend built with **NestJS**, **PostgreSQL (Neon)**, and **Prisma ORM**.
+Enterprise-grade multi-tenant Leave Management System (LMS) backend built with **NestJS**, **PostgreSQL (Neon)**, and **Prisma ORM**.
+
+---
+
+## 🏛️ System Overview
+
+The LMS platform enables organizations to administer leave policies, work schedules, custom holiday calendars, balance allocations, and multi-segment leave requests with strict tenant isolation, role-based access control (RBAC), and day-type availability calculations.
+
+```
+                    ┌────────────────────────────┐
+                    │      Root Administrator     │
+                    │      (/platform/*)         │
+                    └─────────────┬──────────────┘
+                                  │ Manages Tenants
+                    ┌─────────────▼──────────────┐
+                    │    Tenant Organization     │
+                    ├────────────────────────────┤
+                    │ Owner:      /org/*         │
+                    │ HR Admin:   /users,        │
+                    │             /schedules,    │
+                    │             /leave-types,  │
+                    │             /holidays,     │
+                    │             /balances,     │
+                    │             /approvals,    │
+                    │             /reports       │
+                    │ Manager:    /team/*        │
+                    │ Staff:      /leave-requests│
+                    │ All Users:  /my-team, /me  │
+                    └────────────────────────────┘
+```
+
+---
+
+## 🔐 Roles × Endpoints Access Matrix
+
+| Endpoint Group | Allowed Roles | Description | Notes |
+| :--- | :--- | :--- | :--- |
+| **`/auth/*`** | Public / All Users | Login, refresh token rotation, logout, password change, current user | Rate limited: login (5/min), refresh (10/min), password change (5/min). |
+| **`/platform/*`** | `root` only | Tenant organization creation, suspension, owner replacement & password reset | Strict `OrgScopeGuard` blocks tenant users with 403. Root blocked from tenant routes. |
+| **`/org/*`** | `org_owner` | Tenant settings, HR administrator creation, promotion, demotion, ownership transfer | Tenant-scoped by `@CurrentUser().orgId`. |
+| **`/users/*`** | `hr_admin`, `org_owner` | Manage staff & managers, schedule assignment, temporary password reset, deactivation | Excludes root, owners, and HR admins. |
+| **`/schedule-templates/*`** | `hr_admin`, `org_owner` | Create, update, list schedule templates (5-day, Saturday half, alternate Saturdays) | Sunday is universally off (`weight: 0`). |
+| **`/leave-types/*`** | `hr_admin`, `org_owner` | Configure annual quotas, monthly limits, paid/unpaid, WFH categories | Read-only listing accessible to all logged-in tenant users. |
+| **`/holidays/*`** | `hr_admin`, `org_owner` | Maintain organization holiday calendar | Read-only listing accessible to all logged-in tenant users. |
+| **`/balances/allocate`** | `hr_admin`, `org_owner` | Allocate annual leave quotas with automated proration based on joining date | Supports `dryRun: true` preview. |
+| **`/balances/adjust`** | `hr_admin`, `org_owner` | Manual quota adjustments with mandatory reason logging in audit trail | Resulting available balance cannot drop below 0. |
+| **`/balances/carry-forward/*`** | `hr_admin`, `org_owner` | Preview and execute annual carry-forward up to `carryForwardMax` | Atomic multi-row balance execution. |
+| **`/me/balances`** | All Logged-in Tenant Users | View current personal leave balances and monthly utilization | Filterable by leave year. |
+| **`/leave-requests`** | `staff`, `manager`, `hr_admin` | Multi-segment leave & WFH submissions, preview calculations, personal listing | Owners cannot apply (`ForbiddenException`). |
+| **`/leave-requests/on-behalf`** | `hr_admin`, `org_owner` | Submit backdated or emergency leave on behalf of employees | Supports `autoApprove: true`. |
+| **`/leave-requests/:id/cancel`** | Request Owner | Cancel pending leave request before decision | Immediately releases reserved balance. |
+| **`/leave-requests/:id/cancel-approved`** | `hr_admin`, `org_owner` | Cancel previously approved leave with mandatory reason | Automatically refunds balance from used. |
+| **`/approvals/pending`** | `hr_admin`, `org_owner` | Inbox of pending leave requests awaiting approval | HR cannot decide their own leave requests. |
+| **`/approvals/:id/approve`** | `hr_admin`, `org_owner` | Final approval decision | Commits balance from pending to used. |
+| **`/approvals/:id/reject`** | `hr_admin`, `org_owner` | Rejection decision | Releases reserved balance back to available. |
+| **`/team/availability`** | `manager` | Range availability of direct reports with `offDates`, `halfDates`, and `holidays` | Strictly redacts leave types, reasons, balances. |
+| **`/team/availability/today`** | `manager` | Real-time single-day status (`off`, `leave`, `wfh`, `available`) with `halfDay` flag | Single-counting invariant guaranteed. |
+| **`/my-team/availability`** | All Logged-in Tenant Users | Peer & manager availability view for team coordination | Same privacy shield as manager view. |
+| **`/reports/*`** | `hr_admin`, `org_owner` | HR Calendar, On-Leave, Balance Summary, Utilization reports | Supports JSON & CSV (`?format=csv`) with formula injection mitigation. |
+| **`/dashboard/*`** | Role-scoped | `/dashboard/me`, `/dashboard/team`, `/dashboard/hr`, `/dashboard/owner` | Tailored operational summaries and pending counts. |
+| **`/health` & `/health/ready`** | Public / Monitoring | Liveness and database readiness probes | Allowed for all callers and orchestrators. |
+
+---
+
+## ⚙️ Environment Variables Reference Table
+
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `DATABASE_URL` | String | *Required* | Neon PostgreSQL **pooled** connection string (PgBouncer). Must end with `?sslmode=require&pgbouncer=true&connect_timeout=15`. |
+| `DIRECT_URL` | String | *Required* | Neon PostgreSQL **direct** unpooled connection string (used for `prisma migrate deploy` and seeds). |
+| `TEST_DATABASE_URL` | String | *Optional* | Dedicated connection string for automated tests against an isolated Neon branch or test database. |
+| `JWT_ACCESS_SECRET` | String | *Required* | Secret key for 15-minute JWT access tokens (minimum 32 characters). |
+| `JWT_REFRESH_SECRET` | String | *Required* | Secret key for 7-day JWT refresh tokens (minimum 32 characters, must differ from access secret). |
+| `PORT` | Number | `3000` | Port for the HTTP application server. |
+| `NODE_ENV` | String | `development` | Runtime environment (`development`, `production`, `test`). |
+| `CORS_ORIGINS` | String | `*` (dev) | Comma-separated list of allowed origins for cross-origin requests (e.g., `https://app.example.com,https://admin.example.com`). |
+| `COOKIE_SAMESITE` | String | `strict` | SameSite attribute for httpOnly refresh cookies (`strict`, `lax`, `none`). |
+| `COOKIE_DOMAIN` | String | *Optional* | Domain attribute for refresh cookies (e.g., `.example.com` for cross-subdomain sharing). |
+| `TRUST_PROXY` | String | *Optional* | Reverse proxy hops configuration (e.g., `1`, `true`) for accurate client IP rate limiting behind load balancers. |
+| `SWAGGER_ENABLED` | Boolean | `false` in prod | Set to `true` to enable Swagger UI at `/docs` in production. (Always enabled in non-production). |
+| `PRISMA_TRANSACTION_MAX_WAIT` | Number | `5000` | Maximum time (ms) Prisma Client waits to acquire a transaction connection from the pool. |
+| `PRISMA_TRANSACTION_TIMEOUT` | Number | `10000` | Maximum execution duration (ms) for an interactive transaction before timing out. |
+| `ROOT_EMAIL` | String | `root@example.com` | Initial root super-administrator email for `prisma db seed`. |
+| `ROOT_PASSWORD` | String | `ChangeMeSuperSecret123!` | Initial root super-administrator password for `prisma db seed`. |
+
+---
+
+## 🍪 Cross-Domain Frontend Cookie Configuration Guide
+
+When the frontend and backend are hosted on separate domains or subdomains (e.g., frontend on `https://app.company.com` and backend on `https://api.company.com` or `https://company-api.onrender.com`):
+
+1. **Shared Root Domain (e.g., `app.company.com` and `api.company.com`)**:
+   - Set `COOKIE_SAMESITE=lax` (or `strict`)
+   - Set `COOKIE_DOMAIN=.company.com`
+   - Set `CORS_ORIGINS=https://app.company.com`
+   - In frontend fetch / axios, set `credentials: 'include'` (or `withCredentials: true`).
+
+2. **Completely Distinct Domains (e.g., `https://my-lms.vercel.app` and `https://lms-api.render.com`)**:
+   - Set `COOKIE_SAMESITE=none` (the backend automatically enforces `secure: true` when sameSite is `none`).
+   - Leave `COOKIE_DOMAIN` unset.
+   - Set `CORS_ORIGINS=https://my-lms.vercel.app`
+   - **Crucial**: Modern browsers reject `sameSite=none` cookies over plain HTTP. HTTPS is strictly required on both frontend and backend.
+   - In frontend fetch / axios, set `credentials: 'include'` (or `withCredentials: true`).
+
+---
+
+## 🗄️ Neon PostgreSQL & Connection Pooling Best Practices
+
+- **Runtime Operations via PgBouncer**: `DATABASE_URL` points to Neon's connection pooler endpoint (host contains `-pooler`).
+  - **Connection Limits**: Neon's pooled endpoint safely multiplexes thousands of incoming connections onto backend compute connections. Set `connection_limit=20` in the URL to prevent excessive client-side pool exhaustion during bursts.
+- **Migrations & Seeds via Direct Endpoint**: `DIRECT_URL` connects directly to the PostgreSQL compute instance without PgBouncer. This is required because PgBouncer in transaction mode does not support session-level advisory locks or prepared statements used during DDL migrations.
+- **Database Migrations Rule**: Always provision and update environments with `npx prisma migrate deploy` (never `prisma db push`). `migrate deploy` executes the migration SQL script containing the raw PostgreSQL partial unique indexes (`uq_one_active_owner_per_org`, `uq_single_root`) and check constraints (`chk_user_root_org`).
+
+---
+
+## 📖 Swagger API Documentation & Postman Collection
+
+### 1. Interactive Swagger UI
+- Available at: `http://localhost:3000/docs`
+- Features interactive endpoint testing, comprehensive DTO schemas, role tags, and error code references.
+- Configured with Bearer Authentication: click **Authorize** at the top right and enter your JWT access token.
+
+### 2. Exporting OpenAPI Specification
+```bash
+npm run openapi:export
+```
+Generates two files in the project root:
+- `openapi.json`: OpenAPI 3.0 specification.
+- `postman_collection.json`: Ready-to-import Postman Collection v2.1.
+- `lms.postman_environment.json`: Postman environment with `baseUrl` (`http://localhost:3000`) and `accessToken`.
+
+### 3. Postman Collection Features
+- **Automatic Token Capture**: The `POST /auth/login` request includes a built-in Postman Test Script that automatically saves the returned `accessToken` into the Postman environment variable `{{accessToken}}`. All subsequent requests automatically use this token!
+- **Cookie Notice**: For `POST /auth/refresh` and `POST /auth/logout`, Postman automatically manages httpOnly cookies received from `/auth/login`.
+
+---
+
+## 🧪 Demo Data & Instant Testing
+
+Populate your database with a complete demo tenant organization (`Acme Technologies`) showcasing all schedule variants, leave policies, and user roles:
+
+```bash
+npm run seed:demo
+```
+*(Refuses to run if `NODE_ENV=production`).*
+
+### Demo Accounts Table (Password for all demo accounts: `DemoPassword123!`)
+
+| Role | Email | Name | Schedule / Notes |
+| :--- | :--- | :--- | :--- |
+| **Org Owner** | `owner@acme.com` | Alice Owner | Full tenant administrative rights |
+| **HR Admin** | `hr@acme.com` | Harry HR Admin | HR operations, policy, approvals, and reports |
+| **Manager 1** | `manager1@acme.com` | Maya Manager | Engineering Manager (Standard 5-day schedule) |
+| **Manager 2** | `manager2@acme.com` | Mohan Manager | Design & Support Manager (Standard 5-day schedule) |
+| **Staff 1** | `staff1@acme.com` | Sam Staff | Engineering (Standard 5-day: Saturday Off) |
+| **Staff 2** | `staff2@acme.com` | Sara Staff | Engineering (Saturday Half-Day Shift) |
+| **Staff 3** | `staff3@acme.com` | Steve Staff | Engineering (Alternate Saturdays: 1st & 3rd Off) |
+| **Staff 4** | `staff4@acme.com` | Sonia Staff | Design & Support (Alternate Saturdays: 2nd & 4th Off) |
+| **Staff 5** | `staff5@acme.com` | Sean Staff | Design & Support (Org Default Fallback: Mon-Fri) |
 
 ---
 
@@ -11,7 +169,7 @@ Multi-tenant Leave Management System backend built with **NestJS**, **PostgreSQL
 - **ORM**: Prisma (Latest stable v6)
 - **Validation**: Strict DTO validation via `class-validator` & `class-transformer`
 - **Global ValidationPipe**: `whitelist: true`, `forbidNonWhitelisted: true`, `transform: true`
-- **Security & Utilities**: `bcrypt` (10 salt rounds), `cookie-parser`, `@nestjs/config`, `@nestjs/throttler`, `@nestjs/jwt`, `@nestjs/passport`
+- **Security & Utilities**: `helmet`, `compression`, `bcrypt` (10 salt rounds), `cookie-parser`, `@nestjs/config`, `@nestjs/throttler`, `@nestjs/jwt`, `@nestjs/passport`
 - **Database Module**: Global `PrismaModule` + `PrismaService` with automatic connection retries (wake-up resilience for Neon serverless compute) and graceful shutdown hooks.
 
 ---
@@ -1822,11 +1980,16 @@ Executive view for Organization Owner:
 
 ## 🧪 Automated Test Suites
 
-### Unit Tests (`LeaveYearService`, `ScheduleResolverService`, `LeaveRequestsService`, & `ClockService`)
+### Unit Tests (`LeaveYearService`, `ScheduleResolverService`, `LeaveRequestsService`, `ClockService`, & `EnvValidation`)
 ```bash
 npm test
 ```
-**Test Results (47/47 Passed across 4 suites)**:
+**Test Results (52/52 Passed across 5 suites)**:
+- `test/env-validation.spec.ts` (5 tests passed):
+  - Missing `DATABASE_URL` rejection
+  - Minimum 32-character requirement for JWT secrets
+  - Rejection of identical `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET`
+  - Default value application and validation
 - `test/schedule-resolver.spec.ts` (23 tests passed):
   - Sunday rule (weight 0, weekly off)
   - Org fallback to `workingDays`
@@ -1843,7 +2006,9 @@ npm test
 ```bash
 npm run test:e2e
 ```
-**Test Results (129/129 Passed across 8 suites)**:
+**Test Results (131/131 Passed across 9 suites)**:
+- `test/full-lifecycle.e2e-spec.ts` (1 test passed):
+  - **Full 21-step enterprise story**: Root platform login → Org + owner atomic creation → Owner first-time login and mandatory password change → Organization settings update → HR administrator creation & login → Leave types, schedule templates, and holidays creation → Manager and staff creation with manager assignment & schedule attachment → Annual balance allocation → Staff multi-segment leave + WFH request submission → Overlap validation conflict check (409 OVERLAP) → HR pending approvals inbox inspection & approval → Balance commitment from pending to used → Staff personal dashboard reflection → Manager privacy-redacted team availability view & peer my-team view → Saturday availability evaluation (`off`, `available`, `halfDay`) → HR approved leave cancellation & balance refund → HR backdated on-behalf leave submission with auto-approval → HR self-leave submission, blocked self-approval, and Owner approval → Annual carry-forward preview and execution → Tenant ownership transfer to HR administrator with immediate old-token revocation → Platform root organization suspension and universal session termination.
 - `test/team-schedule-availability.e2e-spec.ts` (13 tests passed):
   - Saturday resolution across 6 schedule variants (A: Sat off, B: Sat half, C: Sat full, D: alternate [1,3], E: alternate [2,4], F: fallback [1..5])
   - Evaluation across all November 2026 Saturdays (Nov 7, 14, 21, 28)
@@ -1868,11 +2033,146 @@ npm run test:e2e
   - CSV Export: UTF-8 BOM, header row, escaping, and formula injection prevention (`'`, `=`, `+`, `-`, `@`)
   - Dashboards: `/dashboard/me`, `/dashboard/team`, `/dashboard/hr` (caller-scoped pendingApprovalsCount), `/dashboard/owner` (pendingHrAdminApprovals, activeHrAdmins, recentAudit)
   - Tenant isolation: Org A data completely isolated from Org B across all read views
+- `test/platform-org.e2e-spec.ts` (12 tests passed):
+  - **Database raw SQL constraints verification**: Active presence of `uq_one_active_owner_per_org`, `uq_single_root`, and `chk_user_root_org` verified directly in PostgreSQL system catalogs (`pg_indexes`, `pg_constraint`)
+  - Platform organization creation rollback on duplicate email
+  - Tenant suspension and token revocation
+  - Owner replacement and password reset
 - `test/approvals.e2e-spec.ts` (22 tests passed)
 - `test/leave-requests.e2e-spec.ts` (26 tests passed)
 - `test/balances.e2e-spec.ts` (12 tests passed)
 - `test/hr-setup.e2e-spec.ts` (16 tests passed)
-- `test/platform-org.e2e-spec.ts` (11 tests passed)
 - `test/auth.e2e-spec.ts` (12 tests passed)
 
-**Total Automated Tests: 176 / 176 Passing**
+**Total Automated Tests: 183 / 183 Passing**
+
+---
+
+## 🚀 Production Deployment Guide
+
+The application is containerized and cloud-agnostic, capable of deploying to **Render**, **Railway**, **Fly.io**, **AWS ECS / App Runner**, or **Kubernetes**.
+
+### 1. Database Migrations Rule (Release Step)
+> [!IMPORTANT]
+> **Never run database migrations automatically inside the container startup script (`CMD`).**
+> In multi-replica or auto-scaling deployments, concurrent containers attempting migration will conflict and deadlock.
+> Run migrations as a dedicated pre-deploy / release phase command:
+> ```bash
+> npx prisma migrate deploy
+> ```
+
+### 2. Multi-Stage Docker Build
+```bash
+# Build production Docker image
+docker build -t lms-backend:latest .
+
+# Run container locally with production env
+docker run -d \
+  -p 3000:3000 \
+  --name lms-app \
+  --env-file .env \
+  lms-backend:latest
+```
+
+### 3. Deploying to PaaS (Render / Railway / Fly.io)
+1. **Set Environment Variables**: Configure all required variables from the [Environment Variables Table](#️-environment-variables-reference-table).
+2. **Pre-Deploy / Release Command**:
+   ```bash
+   npx prisma migrate deploy
+   ```
+3. **Application Start Command**:
+   ```bash
+   npm run start:prod
+   ```
+4. **Health Check Endpoints**:
+   - Liveness probe: `/health`
+   - Readiness probe: `/health/ready`
+
+---
+
+## 📘 Operations & Incident Runbook
+
+### Runbook 1: Initial Platform Root Super-Administrator Seeding
+Before any tenant organizations can be created, the platform requires an initial root administrator:
+```bash
+# Set credentials in environment
+export ROOT_EMAIL="root@yourdomain.com"
+export ROOT_PASSWORD="SuperSecretRootPassword123!"
+
+# Run idempotent seed using DIRECT_URL connection
+npm run prisma:seed
+```
+- The root user is created with `role: root` and `orgId: null` (enforced by `chk_user_root_org`).
+- Upon first login at `POST /auth/login`, change the password via `POST /auth/change-password`.
+
+### Runbook 2: Bootstrapping the First Tenant Organization
+1. Log in as Root Super-Admin:
+   ```bash
+   curl -X POST https://api.yourdomain.com/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"root@yourdomain.com","password":"YourRootPassword123!"}'
+   ```
+   Copy the returned `accessToken`.
+2. Create the Organization and initial Owner:
+   ```bash
+   curl -X POST https://api.yourdomain.com/platform/organizations \
+     -H "Authorization: Bearer <ROOT_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "orgName": "Acme Corp",
+       "ownerName": "Alice Smith",
+       "ownerEmail": "alice@acme.com",
+       "tempPassword": "InitialTempPassword123!"
+     }'
+   ```
+3. The owner logs in with `tempPassword` and is immediately required to set a permanent password before accessing `/org/*` routes.
+
+### Runbook 3: Emergency JWT Secret Rotation
+If `JWT_ACCESS_SECRET` or `JWT_REFRESH_SECRET` is leaked or compromised:
+1. **Prepare New Secrets**: Generate two distinct 64-character random strings:
+   ```bash
+   openssl rand -hex 32
+   ```
+2. **Update Hosting Environment**: Update `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` in your hosting dashboard (Render / Railway / AWS).
+3. **Redeploy Application**: Trigger a deployment.
+4. **Invalidate Active DB Refresh Tokens**:
+   Connect via psql using `DIRECT_URL` and revoke all active refresh tokens to force all users to re-authenticate:
+   ```sql
+   DELETE FROM "RefreshToken";
+   ```
+5. All previously issued access tokens and refresh cookies are immediately invalidated.
+
+### Runbook 4: Resetting Organization Owner Password via Root
+If a tenant organization owner is locked out or forgets their credentials:
+1. As Root Super-Admin, invoke:
+   ```bash
+   curl -X POST https://api.yourdomain.com/platform/organizations/<ORG_ID>/reset-owner-password \
+     -H "Authorization: Bearer <ROOT_ACCESS_TOKEN>" \
+     -H "Content-Type: application/json" \
+     -d '{"tempPassword":"NewOwnerTempPassword123!"}'
+   ```
+2. This resets the owner's password, flags `mustChangePassword: true`, and automatically deletes all stored refresh tokens for that owner.
+
+### Runbook 5: Neon Branching, Backup, and Point-in-Time Restore (PITR)
+- **Instant Branching for Safe Testing / Staging**:
+  In the Neon Console or via Neon CLI:
+  ```bash
+  neon branches create --name test-staging-branch --parent main
+  ```
+  Run the automated E2E test suite against this isolated branch without risking production data:
+  ```bash
+  export TEST_DATABASE_URL="<NEON_BRANCH_POOLED_URL>"
+  export DIRECT_URL="<NEON_BRANCH_DIRECT_URL>"
+  npm run test:neon
+  ```
+- **Point-in-Time Recovery (PITR)**:
+  Neon maintains continuous WAL backups allowing you to restore your database to any second within your retention window. If data corruption occurs:
+  1. Open Neon Console → **Branches** → **Restore**.
+  2. Select the timestamp just prior to the incident (e.g. `2026-11-19 11:30:00 UTC`).
+  3. Create a restored branch and update `DATABASE_URL` and `DIRECT_URL` in your hosting environment.
+
+### Runbook 6: Known Limitations & Phase 2 Roadmap
+- **No Bulk CSV Employee Import**: Employee creation is currently performed via `POST /users` (single record). Bulk CSV onboarding is slated for Phase 2.
+- **No Outgoing Notifications**: Status changes and pending approvals are currently surfaced via `/dashboard/me`, `/dashboard/hr`, and `/approvals/pending`. Email (SendGrid/SES) and Slack webhooks are scheduled for Phase 2.
+- **No Partial-Day Sub-Segment Approval**: Leave requests are approved or rejected in their entirety. Splitting or partially approving individual segments is planned for Phase 2.
+- **Break-Glass Emergency Elevation**: Root super-admin cannot act inside tenant organizations directly (`OrgScopeGuard` prevents cross-boundary pollution). Break-glass access requires owner password reset or temporary owner replacement.
