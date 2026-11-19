@@ -1,7 +1,9 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { validateEnv } from './config/env.validation';
+import { RequestLoggingMiddleware } from './common/middleware/request-logging.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -31,12 +33,29 @@ import { RolesGuard } from './common/guards/roles.guard';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validate: validateEnv,
       envFilePath: ['.env', '.env.example'],
     }),
     ThrottlerModule.forRoot([
       {
+        name: 'default',
+        ttl: 60000,
+        limit: 100,
+      },
+      {
+        name: 'auth',
+        ttl: 60000,
+        limit: 5,
+      },
+      {
+        name: 'refresh',
         ttl: 60000,
         limit: 10,
+      },
+      {
+        name: 'platform',
+        ttl: 60000,
+        limit: 20,
       },
     ]),
     PrismaModule,
@@ -88,4 +107,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestLoggingMiddleware).forRoutes('*');
+  }
+}

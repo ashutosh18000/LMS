@@ -14,11 +14,18 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
+    const maxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '5000', 10);
+    const timeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '10000', 10);
+
     super({
       log:
         process.env.NODE_ENV === 'development'
           ? ['query', 'info', 'warn', 'error']
           : ['error', 'warn'],
+      transactionOptions: {
+        maxWait,
+        timeout,
+      },
     });
   }
 

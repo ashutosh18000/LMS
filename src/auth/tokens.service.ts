@@ -15,6 +15,8 @@ export class TokensService {
   private readonly accessSecret: string;
   private readonly refreshSecret: string;
   private readonly isProduction: boolean;
+  private readonly cookieSameSite: 'strict' | 'lax' | 'none';
+  private readonly cookieDomain?: string;
 
   constructor(
     private readonly jwtService: JwtService,
@@ -25,11 +27,28 @@ export class TokensService {
     this.refreshSecret = configService.get<string>('JWT_REFRESH_SECRET') || '';
     this.isProduction = configService.get<string>('NODE_ENV') === 'production';
 
+    const sameSiteRaw = (configService.get<string>('COOKIE_SAMESITE') || 'strict').toLowerCase();
+    this.cookieSameSite = ['strict', 'lax', 'none'].includes(sameSiteRaw)
+      ? (sameSiteRaw as 'strict' | 'lax' | 'none')
+      : 'strict';
+    this.cookieDomain = configService.get<string>('COOKIE_DOMAIN') || undefined;
+
     if (!this.accessSecret || !this.refreshSecret) {
       throw new Error(
         'JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be configured',
       );
     }
+  }
+
+  private getCookieOptions() {
+    const secure = this.cookieSameSite === 'none' ? true : this.isProduction;
+    return {
+      httpOnly: true,
+      secure,
+      sameSite: this.cookieSameSite,
+      path: '/auth',
+      ...(this.cookieDomain ? { domain: this.cookieDomain } : {}),
+    };
   }
 
   /**
@@ -105,10 +124,7 @@ export class TokensService {
    */
   setRefreshTokenCookie(res: Response, rawToken: string): void {
     res.cookie('refreshToken', rawToken, {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      path: '/auth',
+      ...this.getCookieOptions(),
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
   }
@@ -117,12 +133,7 @@ export class TokensService {
    * Clears the refresh token cookie.
    */
   clearRefreshTokenCookie(res: Response): void {
-    res.clearCookie('refreshToken', {
-      httpOnly: true,
-      secure: this.isProduction,
-      sameSite: 'strict',
-      path: '/auth',
-    });
+    res.clearCookie('refreshToken', this.getCookieOptions());
   }
 
   /**

@@ -10,6 +10,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
+import { Throttle } from '@nestjs/throttler';
 import { MinRole } from '../common/decorators/min-role.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PlatformService } from './platform.service';
@@ -19,6 +20,7 @@ import { OrgActionReasonDto } from './dto/org-action-reason.dto';
 import { ReplaceOwnerDto } from './dto/replace-owner.dto';
 import { ResetOwnerPasswordDto } from './dto/reset-owner-password.dto';
 
+@Throttle({ platform: { limit: 20, ttl: 60000 } })
 @MinRole(Role.root)
 @Controller('platform')
 export class PlatformController {

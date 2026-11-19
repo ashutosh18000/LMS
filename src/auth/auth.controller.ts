@@ -22,10 +22,10 @@ export class AuthController {
 
   /**
    * 1. POST /auth/login
-   * Public endpoint with IP rate limit: 10 attempts per minute.
+   * Public endpoint with IP rate limit: 5 attempts per minute.
    */
   @Public()
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('login')
   async login(
@@ -37,9 +37,10 @@ export class AuthController {
 
   /**
    * 2. POST /auth/refresh
-   * Public endpoint. Verifies and rotates refresh token from cookie.
+   * Public endpoint. Verifies and rotates refresh token from cookie (10 req/min).
    */
   @Public()
+  @Throttle({ refresh: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(
@@ -67,8 +68,9 @@ export class AuthController {
 
   /**
    * 4. POST /auth/change-password
-   * Protected endpoint. Requires valid access token.
+   * Protected endpoint. Requires valid access token (5 req/min).
    */
+  @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @Post('change-password')
   async changePassword(
