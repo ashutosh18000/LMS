@@ -130,6 +130,23 @@ describe('Platform (Root) & Org (Owner) Modules E2E', () => {
   // ROOT / PLATFORM ENDPOINT TESTS
   // ===========================================================================
   describe('ROOT /platform Endpoints', () => {
+    it('0. verifies raw SQL constraints uq_one_active_owner_per_org, uq_single_root, and chk_user_root_org exist in DB', async () => {
+      const indexes: any[] = await prisma.$queryRaw`
+        SELECT indexname FROM pg_indexes 
+        WHERE tablename = 'User' AND indexname IN ('uq_one_active_owner_per_org', 'uq_single_root');
+      `;
+      const indexNames = indexes.map((i) => i.indexname);
+      expect(indexNames).toContain('uq_one_active_owner_per_org');
+      expect(indexNames).toContain('uq_single_root');
+
+      const constraints: any[] = await prisma.$queryRaw`
+        SELECT conname FROM pg_constraint 
+        WHERE conname = 'chk_user_root_org';
+      `;
+      const constraintNames = constraints.map((c) => c.conname);
+      expect(constraintNames).toContain('chk_user_root_org');
+    });
+
     it('1. POST /platform/organizations - creates org + owner atomically; duplicate email rolls back with 409', async () => {
       const { token: rootToken } = await createRootAndGetToken();
 
