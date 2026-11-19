@@ -1,0 +1,70 @@
+name: LMS Backend CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: svms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/svms_test"
+      DIRECT_URL: "postgresql://postgres:postgrespassword@localhost:5432/svms_test"
+      TEST_DATABASE_URL: "postgresql://postgres:postgrespassword@localhost:5432/svms_test"
+      JWT_ACCESS_SECRET: "ci-test-jwt-access-secret-32-chars-long!"
+      JWT_REFRESH_SECRET: "ci-test-jwt-refresh-secret-32-chars-long!"
+      PORT: 3000
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Security Vulnerability Audit
+        run: npm audit --audit-level=high
+
+      - name: Typecheck / Lint
+        run: npm run lint
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Compile Application Build
+        run: npm run build
+
+      - name: Run Unit Tests
+        run: npm test
+
+      - name: Apply Database Migrations (migrate deploy)
+        run: npx prisma migrate deploy
+
+      - name: Run End-to-End Test Suite
+        run: npm run test:e2e
