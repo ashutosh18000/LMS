@@ -1,0 +1,351 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+enum Role {
+  root
+  org_owner
+  hr_admin
+  manager
+  staff
+}
+
+enum OrgStatus {
+  active
+  suspended
+}
+
+enum RequestStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum Portion {
+  full
+  first_half
+  second_half
+}
+
+enum SaturdayMode {
+  off
+  half
+  full
+  alternate
+}
+
+enum SkipReason {
+  none
+  weekly_off
+  holiday
+}
+
+// =============================================================================
+// MODELS
+// =============================================================================
+
+// 1. Organization: Multi-tenant boundary entity
+model Organization {
+  id                      String    @id @default(uuid())
+  name                    String
+  status                  OrgStatus @default(active)
+  timezone                String    @default("Asia/Kolkata")
+  financialYearStartMonth Int       @default(4)
+  workingDays             Int[]     @default([1, 2, 3, 4, 5])
+  backdateAllowedDays     Int       @default(7)
+  createdAt               DateTime  @default(now()) @db.Timestamptz
+  updatedAt               DateTime  @updatedAt @db.Timestamptz
+
+  users                  User[]
+  workScheduleTemplates  WorkScheduleTemplate[]
+  employeeSchedules      EmployeeSchedule[]
+  leaveTypes             LeaveType[]
+  leaveBalances          LeaveBalance[]
+  balanceAdjustments     BalanceAdjustment[]
+  carryForwardRuns       CarryForwardRun[]
+  holidays               Holiday[]
+  leaveRequests          LeaveRequest[]
+  leaveSegments          LeaveSegment[]
+  leaveSegmentDays       LeaveSegmentDay[]
+  auditLogs              AuditLog[]
+}
+
+// 2. User: Platform users (root user has orgId = null, others belong to an org)
+model User {
+  id                 String    @id @default(uuid())
+  orgId              String?
+  email              String    @unique
+  name               String
+  passwordHash       String
+  role               Role
+  managerId          String?
+  department         String?
+  joiningDate        DateTime? @db.Date
+  mustChangePassword Boolean   @default(true)
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now()) @db.Timestamptz
+  updatedAt          DateTime  @updatedAt @db.Timestamptz
+
+  organization       Organization?          @relation(fields: [orgId], references: [id])
+  manager            User?                  @relation("UserManager", fields: [managerId], references: [id])
+  subordinates       User[]                 @relation("UserManager")
+  refreshTokens      RefreshToken[]
+  employeeSchedules  EmployeeSchedule[]
+  leaveBalances      LeaveBalance[]
+  balanceAdjustments BalanceAdjustment[]    @relation("ActorAdjustments")
+  carryForwardRuns   CarryForwardRun[]      @relation("UserCarryForwardRuns")
+  leaveRequests      LeaveRequest[]         @relation("UserLeaveRequests")
+  createdRequests    LeaveRequest[]         @relation("CreatedRequests")
+  decidedRequests    LeaveRequest[]         @relation("DecidedRequests")
+  leaveSegments      LeaveSegment[]
+  leaveSegmentDays   LeaveSegmentDay[]
+  auditLogsActor     AuditLog[]             @relation("ActorAuditLogs")
+  auditLogsTarget    AuditLog[]             @relation("TargetAuditLogs")
+
+  @@index([orgId])
+  @@index([managerId])
+}
+
+// 3. RefreshToken: Persisted refresh tokens, id matches JWT jti claim
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime @db.Timestamptz
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// 4. AuditLog: Immutable trail of changes across tenant or platform operations
+model AuditLog {
+  id           String   @id @default(uuid())
+  orgId        String?
+  actorId      String
+  targetUserId String?
+  action       String
+  reason       String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @db.Timestamptz
+
+  organization Organization? @relation(fields: [orgId], references: [id])
+  actor        User          @relation("ActorAuditLogs", fields: [actorId], references: [id])
+  targetUser   User?         @relation("TargetAuditLogs", fields: [targetUserId], references: [id])
+
+  @@index([orgId, createdAt])
+}
+
+// 5. WorkScheduleTemplate: Working rules template (Sunday always off in v1)
+model WorkScheduleTemplate {
+  id                 String       @id @default(uuid())
+  orgId              String
+  name               String
+  saturdayMode       SaturdayMode
+  alternateOffWeeks  Int[]        // e.g., [1, 3] or [2, 4], only applicable in alternate mode
+  active             Boolean      @default(true)
+  createdAt          DateTime     @default(now()) @db.Timestamptz
+  updatedAt          DateTime     @updatedAt @db.Timestamptz
+
+  organization      Organization       @relation(fields: [orgId], references: [id])
+  employeeSchedules EmployeeSchedule[]
+
+  @@unique([orgId, name])
+}
+
+// 6. EmployeeSchedule: Assignment of a work schedule template to an employee
+model EmployeeSchedule {
+  id            String   @id @default(uuid())
+  orgId         String
+  userId        String
+  templateId    String
+  effectiveFrom DateTime @db.Date
+  createdBy     String
+  createdAt     DateTime @default(now()) @db.Timestamptz
+  updatedAt     DateTime @updatedAt @db.Timestamptz
+
+  organization Organization         @relation(fields: [orgId], references: [id])
+  user         User                 @relation(fields: [userId], references: [id])
+  template     WorkScheduleTemplate @relation(fields: [templateId], references: [id])
+
+  @@unique([userId, effectiveFrom])
+}
+
+// 7. LeaveType: Configured leave categories (WFH is also a leave type with isWfh=true, deductsBalance=false)
+model LeaveType {
+  id              String   @id @default(uuid())
+  orgId           String
+  name            String
+  paid            Boolean
+  daysPerYear     Decimal? @db.Decimal(5, 1) // null = unlimited annual quota
+  monthlyLimit    Decimal? @db.Decimal(5, 1) // null = no monthly limit
+  deductsBalance  Boolean
+  isWfh           Boolean  @default(false)
+  halfDayAllowed  Boolean
+  minNoticeDays   Int      @default(0)
+  carryForwardMax Decimal  @default(0) @db.Decimal(5, 1)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+  updatedAt       DateTime @updatedAt @db.Timestamptz
+
+  organization     Organization      @relation(fields: [orgId], references: [id])
+  leaveBalances    LeaveBalance[]
+  leaveSegments    LeaveSegment[]
+  leaveSegmentDays LeaveSegmentDay[]
+
+  @@unique([orgId, name])
+}
+
+// 8. LeaveBalance: Annual leave entitlement tracking per user and type
+// available = allocated - used - pending (computed in business service)
+model LeaveBalance {
+  id          String   @id @default(uuid())
+  orgId       String
+  userId      String
+  leaveTypeId String
+  year        Int
+  allocated   Decimal  @db.Decimal(5, 1)
+  used        Decimal  @default(0) @db.Decimal(5, 1)
+  pending     Decimal  @default(0) @db.Decimal(5, 1)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  organization       Organization        @relation(fields: [orgId], references: [id])
+  user               User                @relation(fields: [userId], references: [id])
+  leaveType          LeaveType           @relation(fields: [leaveTypeId], references: [id])
+  balanceAdjustments BalanceAdjustment[]
+
+  @@unique([userId, leaveTypeId, year])
+}
+
+// 9. BalanceAdjustment: Manual or administrative adjustments applied to a balance
+model BalanceAdjustment {
+  id        String   @id @default(uuid())
+  orgId     String
+  balanceId String
+  delta     Decimal  @db.Decimal(5, 1)
+  reason    String
+  actorId   String
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  leaveBalance LeaveBalance @relation(fields: [balanceId], references: [id])
+  actor        User         @relation("ActorAdjustments", fields: [actorId], references: [id])
+}
+
+// 10. CarryForwardRun: Records annual leave balance carry forward batch operations
+model CarryForwardRun {
+  id        String   @id @default(uuid())
+  orgId     String
+  fromYear  Int
+  runBy     String
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  organization Organization @relation(fields: [orgId], references: [id])
+  runner       User         @relation("UserCarryForwardRuns", fields: [runBy], references: [id])
+
+  @@unique([orgId, fromYear])
+}
+
+// 11. Holiday: Calendar holidays declared by an organization
+model Holiday {
+  id        String   @id @default(uuid())
+  orgId     String
+  date      DateTime @db.Date
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @db.Timestamptz
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  organization Organization @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, date])
+}
+
+// 12. LeaveRequest: Leave application header (HR is sole approver, no multi-stage field)
+model LeaveRequest {
+  id              String        @id @default(uuid())
+  orgId           String
+  userId          String
+  reason          String
+  status          RequestStatus @default(pending)
+  spanDays        Int
+  countedDays     Decimal       @db.Decimal(5, 1)
+  createdBy       String        // Submitter user ID; when applied on-behalf, holds HR user ID
+  decidedBy       String?
+  decidedAt       DateTime?     @db.Timestamptz
+  decisionComment String?
+  cancelledAt     DateTime?     @db.Timestamptz
+  createdAt       DateTime      @default(now()) @db.Timestamptz
+  updatedAt       DateTime      @updatedAt @db.Timestamptz
+
+  organization Organization      @relation(fields: [orgId], references: [id])
+  user         User              @relation("UserLeaveRequests", fields: [userId], references: [id])
+  creator      User              @relation("CreatedRequests", fields: [createdBy], references: [id])
+  decider      User?             @relation("DecidedRequests", fields: [decidedBy], references: [id])
+  segments     LeaveSegment[]
+  segmentDays  LeaveSegmentDay[]
+
+  @@index([orgId, status])
+  @@index([userId, status])
+}
+
+// 13. LeaveSegment: Continuous date span within a request for a specific leave type
+model LeaveSegment {
+  id          String   @id @default(uuid())
+  requestId   String
+  orgId       String
+  userId      String
+  leaveTypeId String
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  portion     Portion  @default(full)
+  countedDays Decimal  @db.Decimal(5, 1)
+  createdAt   DateTime @default(now()) @db.Timestamptz
+  updatedAt   DateTime @updatedAt @db.Timestamptz
+
+  request      LeaveRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  organization Organization      @relation(fields: [orgId], references: [id])
+  user         User              @relation(fields: [userId], references: [id])
+  leaveType    LeaveType         @relation(fields: [leaveTypeId], references: [id])
+  segmentDays  LeaveSegmentDay[]
+
+  @@index([userId, startDate, endDate])
+}
+
+// 14. LeaveSegmentDay: Immutable per-date breakdown created at submission time
+model LeaveSegmentDay {
+  id            String     @id @default(uuid())
+  segmentId     String
+  requestId     String
+  orgId         String
+  userId        String
+  leaveTypeId   String
+  date          DateTime   @db.Date
+  occupancy     Decimal    @db.Decimal(5, 1) // 1.0 (full) or 0.5 (half); ensures total <= 1.0 per date
+  countedWeight Decimal    @db.Decimal(5, 1) // 0, 0.5, or 1.0 depending on working day / holiday / off
+  skipReason    SkipReason
+  createdAt     DateTime   @default(now()) @db.Timestamptz
+
+  segment      LeaveSegment @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  request      LeaveRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [orgId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+  leaveType    LeaveType    @relation(fields: [leaveTypeId], references: [id])
+
+  @@index([userId, date])
+  @@index([orgId, date])
+  @@index([leaveTypeId, userId, date])
+}
