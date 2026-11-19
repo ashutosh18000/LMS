@@ -4,5 +4,6 @@ export * from './decorators/current-user.decorator';
 export * from './decorators/min-role.decorator';
 export * from './guards/jwt-auth.guard';
 export * from './guards/must-change-password.guard';
+export * from './guards/org-scope.guard';
 export * from './guards/roles.guard';
 export * from './dto/pagination.dto';

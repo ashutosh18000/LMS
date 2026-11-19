@@ -1336,6 +1336,404 @@ When a user is deactivated (via `PATCH /users/:id/deactivate` or `PATCH /org/hr-
 
 ---
 
+## 🛡️ Global Security: OrgScopeGuard (Root Platform Boundary)
+
+- **Platform vs Tenant Isolation**: `Role.root` is a platform-level identity (`orgId === null`).
+- **Allowed Routes for Root**: `/platform/*`, `/auth/*`, `/health`.
+- **Tenant Scope Enforcement**: Any request by a `root` user to tenant/org endpoints (such as `/approvals/*`, `/users/*`, `/leave-requests/*`, `/dashboard/*`, `/reports/*`, `/team/*`, `/my-team/*`) is immediately rejected with HTTP 403:
+  ```json
+  {
+    "statusCode": 403,
+    "message": "Root org ke andar kaam nahi karta",
+    "error": "Forbidden"
+  }
+  ```
+- **Platform Route Protection**: Any authenticated non-root user attempting to access `/platform/*` routes is rejected with HTTP 403 (`"Insufficient permissions"`).
+
+---
+
+## 👥 Team Availability & My Team (`/team` & `/my-team`)
+
+### Strict Privacy & Information Redaction
+- In `/team` and `/my-team` availability responses, all sensitive fields are strictly redacted and never queried from the database.
+- **Allowed Member Fields**: `userId`, `name`, `department`, `segments`
+- **Allowed Segment Fields**: `kind` (`"leave"` | `"wfh"`), `startDate`, `endDate`, `portion` (`"full"` | `"first_half"` | `"second_half"`)
+- **Strictly Redacted**: `reason`, `leaveTypeId`, leave type name, `balance`, `requestId` are 100% absent from responses.
+- **Filtering**: Only approved leave segments are included. Pending, rejected, and cancelled requests are excluded. Date ranges are clipped to `[from, to]`. Inactive users are excluded; active members with no leave in range are returned with `segments: []`.
+- **Date Range Constraints**: `from` and `to` (YYYY-MM-DD), `from <= to`, and maximum range of **92 days** (returns 400 Bad Request if violated).
+
+### Endpoints
+
+#### 1. `GET /team/availability` (`@MinRole(Role.manager)`)
+Returns availability for the caller's direct reports (`managerId = caller.id`).
+- **Query Params**: `?from=2026-11-15&to=2026-11-20`
+- **Response (`200 OK`)**:
+  ```json
+  [
+    {
+      "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
+      "name": "Alice Developer",
+      "department": "Engineering",
+      "segments": [
+        {
+          "kind": "leave",
+          "startDate": "2026-11-15",
+          "endDate": "2026-11-17",
+          "portion": "full"
+        }
+      ]
+    },
+    {
+      "userId": "b51a0ff1-523e-4d43-a6d1-efd58dca9a78",
+      "name": "Bob Designer",
+      "department": "Engineering",
+      "segments": []
+    }
+  ]
+  ```
+
+#### 2. `GET /team/availability/today` (`@MinRole(Role.manager)`)
+Single-day status for caller's direct reports for today (`ClockService.today(org.timezone)`).
+- Member is counted once: `onLeave`, `wfh`, or `available`. `available = total - onLeave - wfh`.
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "date": "2026-11-15",
+    "counts": {
+      "onLeave": 1,
+      "wfh": 1,
+      "available": 2,
+      "total": 4
+    },
+    "members": [
+      {
+        "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
+        "name": "Alice Developer",
+        "department": "Engineering",
+        "status": "leave",
+        "portion": "first_half"
+      },
+      {
+        "userId": "b51a0ff1-523e-4d43-a6d1-efd58dca9a78",
+        "name": "Charlie Engineer",
+        "department": "Engineering",
+        "status": "wfh",
+        "portion": "full"
+      },
+      {
+        "userId": "f891ab02-992a-4ce2-b883-99dca0293112",
+        "name": "Bob Designer",
+        "department": "Engineering",
+        "status": "available"
+      }
+    ]
+  }
+  ```
+
+#### 3. `GET /my-team/availability` (All Logged-in Tenant Users)
+Team availability view accessible to all organization members:
+- **Staff**: Peers reporting to the same manager (excluding caller) + caller's manager. Enables staff to see their manager's approved leaves!
+- **Manager**: Direct reports.
+- **HR Admin / Org Owner**: Direct reports if any, or peers reporting to their manager.
+- **Unassigned Staff (no manager)**: Returns empty array `[]`.
+- **Query Params**: `?from=2026-11-15&to=2026-11-20`
+- **Response (`200 OK`)**: Same privacy-redacted response format as `/team/availability`.
+
+#### 4. `GET /my-team/availability/today` (All Logged-in Tenant Users)
+Today's team availability status and counts for the caller's team.
+- **Response (`200 OK`)**: Same response format as `/team/availability/today`.
+
+---
+
+## 📊 HR Calendar & Reports (`/reports`, `@MinRole(Role.hr_admin)`)
+
+### CSV Export & Formula Injection Prevention
+- All report endpoints support `?format=csv`.
+- **Headers**: `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="<report-name>-<date>.csv"`.
+- **UTF-8 BOM**: Prefixed with `\uFEFF` for seamless Excel / LibreOffice rendering.
+- **Formula Injection Mitigation**: Any cell starting with `=, +, -, @` is automatically prepended with a single quote (`'`).
+- **Escaping**: Standard CSV quoting and double-quote escaping (`"` -> `""`).
+- **Limit**: Enforces maximum of 10,000 rows in CSV mode (throws 400 Bad Request if exceeded).
+
+### Endpoints
+
+#### 1. `GET /reports/calendar`
+Org-wide calendar of leave segments.
+- **Query Params**: `?from=2026-11-01&to=2026-11-30&department=Engineering&userId=...&includePending=true&page=1&limit=20`
+- Full HR details: user name, department, leave type name, `isWfh`, clipped start/end dates, portion, reason, and status.
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "items": [
+      {
+        "id": "7bfa602a-3507-4e31-8f67-a2f0c1110b91",
+        "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
+        "userName": "Alice Developer",
+        "department": "Engineering",
+        "leaveTypeId": "12903e05-df3c-482d-862d-0a2569ffca86",
+        "leaveTypeName": "Sick Leave",
+        "isWfh": false,
+        "portion": "full",
+        "startDate": "2026-11-05",
+        "endDate": "2026-11-06",
+        "reason": "Viral fever recovery",
+        "status": "approved"
+      }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20
+  }
+  ```
+
+#### 2. `GET /reports/on-leave`
+Lists employees on leave or WFH for a specific date (defaults to today in org timezone).
+- **Query Params**: `?date=2026-11-15`
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "date": "2026-11-15",
+    "items": [
+      {
+        "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
+        "userName": "Alice Developer",
+        "department": "Engineering",
+        "leaveTypeName": "Sick Leave",
+        "isWfh": false,
+        "portion": "full",
+        "status": "leave"
+      }
+    ]
+  }
+  ```
+
+#### 3. `GET /reports/balance-summary`
+Aggregates employee leave balances by year with department and leave type subtotals.
+- Max 5,000 rows (throws 400 Bad Request with filter recommendation if exceeded).
+- **Query Params**: `?year=2026&department=Engineering&leaveTypeId=...`
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "year": 2026,
+    "rows": [
+      {
+        "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
+        "userName": "Alice Developer",
+        "department": "Engineering",
+        "leaveTypeId": "12903e05-df3c-482d-862d-0a2569ffca86",
+        "leaveTypeName": "Earned Leave",
+        "year": 2026,
+        "allocated": 15,
+        "used": 3,
+        "pending": 2,
+        "available": 10
+      }
+    ],
+    "totals": {
+      "byDepartment": [
+        {
+          "department": "Engineering",
+          "allocated": 15,
+          "used": 3,
+          "pending": 2,
+          "available": 10
+        }
+      ],
+      "byLeaveType": [
+        {
+          "leaveTypeId": "12903e05-df3c-482d-862d-0a2569ffca86",
+          "leaveTypeName": "Earned Leave",
+          "allocated": 15,
+          "used": 3,
+          "pending": 2,
+          "available": 10
+        }
+      ]
+    }
+  }
+  ```
+
+#### 4. `GET /reports/utilization`
+Calculates approved leave utilization (sum of `countedWeight`, working days only) grouped by `department`, `leaveType`, or `user`.
+- For `department`, includes `headcount` and `perEmployeeAverage` (`days / headcount`). Half-days are counted as 0.5.
+- **Query Params**: `?from=2026-11-01&to=2026-11-30&groupBy=department`
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "from": "2026-11-01",
+    "to": "2026-11-30",
+    "groupBy": "department",
+    "items": [
+      {
+        "department": "Engineering",
+        "days": 12.5,
+        "headcount": 10,
+        "perEmployeeAverage": 1.25
+      }
+    ]
+  }
+  ```
+
+- **CSV Sample (`?format=csv`)**:
+  ```csv
+  ﻿User Name,Department,Leave Type,Is WFH,Portion,Start Date,End Date,Reason,Status
+  Alice Developer,Engineering,Earned Leave,No,full,2026-11-05,2026-11-06,Vacation,approved
+  Bob Smith,'+Finance,Casual Leave,No,first_half,2026-11-10,2026-11-10,'@emergency,approved
+  ```
+
+---
+
+## 📈 Dashboards (`/dashboard`)
+
+Data returned is scoped according to caller's permissions and role:
+
+### 1. `GET /dashboard/me` (Staff, Manager, HR Admin, Org Owner)
+Personal overview:
+- `balances`: Current leave year balances (`allocated`, `used`, `pending`, `available`, and `usedThisMonth` for types with `monthlyLimit`). Empty for Org Owner.
+- `upcomingLeaves`: Approved leaves in the next 30 days. Empty for Org Owner.
+- `pendingRequests`: Count and list of caller's pending requests.
+- `upcomingHolidays`: Next 3 holidays from today.
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "balances": [
+      {
+        "leaveTypeId": "12903e05-df3c-482d-862d-0a2569ffca86",
+        "leaveTypeName": "Casual Leave",
+        "isWfh": false,
+        "year": 2026,
+        "allocated": 12,
+        "used": 2,
+        "pending": 1,
+        "available": 9,
+        "monthlyLimit": 4,
+        "usedThisMonth": 2
+      }
+    ],
+    "upcomingLeaves": [
+      {
+        "id": "99f8d5cf-61e8-4669-95e2-2252a17be1f0",
+        "kind": "leave",
+        "leaveTypeName": "Casual Leave",
+        "startDate": "2026-11-20",
+        "endDate": "2026-11-21",
+        "portion": "full"
+      }
+    ],
+    "pendingRequests": {
+      "count": 0,
+      "items": []
+    },
+    "upcomingHolidays": [
+      {
+        "id": "e4f8d5cf-11e8-4669-95e2-2252a17be1f0",
+        "name": "Christmas",
+        "date": "2026-12-25"
+      }
+    ]
+  }
+  ```
+
+### 2. `GET /dashboard/team` (`@MinRole(Role.manager)`)
+Manager's team dashboard:
+- `today`: Real-time counts (`onLeave`, `wfh`, `available`, `total`).
+- `upcoming`: Direct reports' approved leave/WFH in the next 7 days (`member`, `kind`, `startDate`, `endDate`, `portion`).
+- Privacy: No leave type name, no reason.
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "today": {
+      "onLeave": 1,
+      "wfh": 0,
+      "available": 3,
+      "total": 4
+    },
+    "upcoming": [
+      {
+        "member": {
+          "id": "e3048995-c9bf-470a-8bf8-202d088921df",
+          "name": "Alice Developer",
+          "department": "Engineering"
+        },
+        "kind": "leave",
+        "startDate": "2026-11-18",
+        "endDate": "2026-11-19",
+        "portion": "full"
+      }
+    ]
+  }
+  ```
+
+### 3. `GET /dashboard/hr` (`@MinRole(Role.hr_admin)`)
+HR department operational overview:
+- `pendingApprovalsCount`: Number of pending requests this caller can decide (`canDecide`: HR Admin only counts staff and manager requests).
+- `onLeaveToday`: Unique employees on leave and WFH today across the org (`{ leave, wfh }`).
+- `headcount`: Active employees (`staff` + `manager` + `hr_admin`).
+- `thisMonth`: Total approved leave days this calendar month `byLeaveType` and `byDepartment`.
+- `requestsLast30Days`: Counts by status (`pending`, `approved`, `rejected`, `cancelled`).
+- `upcomingHolidays`: Next 3 holidays.
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "pendingApprovalsCount": 3,
+    "onLeaveToday": {
+      "leave": 2,
+      "wfh": 1
+    },
+    "headcount": 25,
+    "thisMonth": {
+      "byLeaveType": [
+        { "name": "Casual Leave", "days": 14.5 },
+        { "name": "Work From Home", "days": 8 }
+      ],
+      "byDepartment": [
+        { "department": "Engineering", "days": 18.5 },
+        { "department": "Marketing", "days": 4 }
+      ]
+    },
+    "requestsLast30Days": {
+      "pending": 3,
+      "approved": 15,
+      "rejected": 2,
+      "cancelled": 1
+    },
+    "upcomingHolidays": [
+      { "id": "...", "name": "Christmas", "date": "2026-12-25" }
+    ]
+  }
+  ```
+
+### 4. `GET /dashboard/owner` (`@MinRole(Role.org_owner)`)
+Executive view for Organization Owner:
+- All metrics from `/dashboard/hr`, plus:
+- `pendingHrAdminApprovals`: Count of pending requests submitted by HR Admins (decidable only by Org Owner).
+- `activeHrAdmins`: Total count of active HR Admins in the organization.
+- `recentAudit`: Last 10 audit log entries (`action`, `actorName`, `targetName`, `createdAt`).
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "pendingApprovalsCount": 4,
+    "onLeaveToday": { "leave": 2, "wfh": 1 },
+    "headcount": 25,
+    "thisMonth": { "byLeaveType": [], "byDepartment": [] },
+    "requestsLast30Days": { "pending": 4, "approved": 15, "rejected": 2, "cancelled": 1 },
+    "upcomingHolidays": [],
+    "pendingHrAdminApprovals": 1,
+    "activeHrAdmins": 2,
+    "recentAudit": [
+      {
+        "id": "52ba41b0-13f5-47e1-88c9-7e5f1f9a29bc",
+        "action": "HR_ADMIN_CREATED",
+        "actorName": "Alice Owner",
+        "targetName": "Bob HR",
+        "createdAt": "2026-11-19T09:30:00.000Z"
+      }
+    ]
+  }
+  ```
+
+---
+
 ## 🧪 Automated Test Suites
 
 ### Unit Tests (`LeaveYearService`, `ScheduleResolverService`, `LeaveRequestsService`, & `ClockService`)
@@ -1352,22 +1750,20 @@ npm test
 ```bash
 npm run test:e2e
 ```
-**Test Results (99/99 Passed across 6 suites)**:
-- `test/approvals.e2e-spec.ts` (22 tests passed):
-  - `POST /approvals/:id/approve` commits balance (`pending -> used`) and audits `LEAVE_APPROVED`
-  - Blocks subsequent approve or reject with HTTP 409
-  - `POST /approvals/:id/reject` requires comment, releases balance, marks final, and audits `LEAVE_REJECTED`
-  - `canDecide` permission enforcement: self-decision blocked (403), HR cannot decide other HR (403/404), Org Owner can approve HR, staff/manager blocked (403)
-  - `GET /approvals/pending` inbox with oldest-first sort, caller authority filtering, and `onlyHrAdmins` filter
-  - Tenant isolation: Org B HR cannot see Org A pending requests
-  - `GET /approvals/:id` returns balances, monthlyUsage, and teamConflicts accurately
-  - Concurrency & Race Conditions (Promise.all): approve vs cancel, double approve, approve vs reject
-  - `POST /leave-requests/on-behalf` bypasses backdate & notice, auto-commits balance, or creates pending request
-  - Self-apply on-behalf forbidden (403); HR applying for another HR forbidden (403)
-  - `POST /leave-requests/:id/cancel-approved` refunds used balance, preserves decision comment, and frees dates
-  - Cancelling pending or rejected via `cancel-approved` blocked with 409; caller cancelling own approved leave blocked (403)
-  - `GET /leave-requests` org-wide history with filters and pagination
-  - User Deactivation Hook: auto-cancels pending requests, releases balances, preserves approved leaves, logs `LEAVE_AUTO_CANCELLED`
+**Test Results (116/116 Passed across 7 suites)**:
+- `test/views-reports-dashboards.e2e-spec.ts` (17 tests passed):
+  - `OrgScopeGuard` enforcement: root access to `/platform/*`, `/auth/*`, `/health` allowed; org routes blocked with 403 (`"Root org ke andar kaam nahi karta"`); non-root blocked from `/platform/*` (403)
+  - Deep privacy & allowed keys scan on `/team` and `/my-team`: strictly no leakage of reason, leaveTypeId, leave type name, balance, or requestId
+  - `GET /team/availability` & `today`: direct reports only, deactivated excluded, unapproved excluded, clipped ranges, half-day portion, single-counting
+  - `GET /my-team/availability` & `today`: peers + manager for staff (including manager approved leaves), direct reports for manager, empty for unassigned staff, 92 days max range (400)
+  - `GET /reports/calendar`: org-wide, department filter, `includePending=true`, pagination, sort by start date
+  - `GET /reports/on-leave`: employees on leave / WFH for specific date
+  - `GET /reports/balance-summary`: employee x leave type balances with department and leave type subtotals, row limit check
+  - `GET /reports/utilization`: sum of countedWeight by department (with headcount and average), leaveType, and user; 0.5 half-day accuracy
+  - CSV Export: UTF-8 BOM, header row, escaping, and formula injection prevention (`'`, `=`, `+`, `-`, `@`)
+  - Dashboards: `/dashboard/me`, `/dashboard/team`, `/dashboard/hr` (caller-scoped pendingApprovalsCount), `/dashboard/owner` (pendingHrAdminApprovals, activeHrAdmins, recentAudit)
+  - Tenant isolation: Org A data completely isolated from Org B across all read views
+- `test/approvals.e2e-spec.ts` (22 tests passed)
 - `test/leave-requests.e2e-spec.ts` (26 tests passed)
 - `test/balances.e2e-spec.ts` (12 tests passed)
 - `test/hr-setup.e2e-spec.ts` (16 tests passed)

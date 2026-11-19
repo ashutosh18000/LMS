@@ -14,12 +14,17 @@ import { BalancesModule } from './balances/balances.module';
 import { LeaveRequestsModule } from './leave-requests/leave-requests.module';
 import { ApprovalsModule } from './approvals/approvals.module';
 import { ClockModule } from './common/clock.module';
+import { AvailabilityModule } from './common/availability.module';
 import { AuditModule } from './audit/audit.module';
 import { PlatformModule } from './platform/platform.module';
 import { OrgModule } from './org/org.module';
+import { TeamModule } from './team/team.module';
+import { ReportsModule } from './reports/reports.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { MustChangePasswordGuard } from './common/guards/must-change-password.guard';
+import { OrgScopeGuard } from './common/guards/org-scope.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
 @Module({
@@ -47,15 +52,20 @@ import { RolesGuard } from './common/guards/roles.guard';
     LeaveRequestsModule,
     ApprovalsModule,
     ClockModule,
+    AvailabilityModule,
     PlatformModule,
     OrgModule,
+    TeamModule,
+    ReportsModule,
+    DashboardModule,
   ],
   providers: [
     // Guard execution order:
     // 1. AppThrottlerGuard (rate-limits IP before heavy work, bypassed in NODE_ENV=test)
     // 2. JwtAuthGuard (authenticates user, resolves @Public())
     // 3. MustChangePasswordGuard (blocks routes if mustChangePassword is true)
-    // 4. RolesGuard (verifies @MinRole hierarchy)
+    // 4. OrgScopeGuard (restricts root to /platform/*, /auth/*, /health; blocks non-root from /platform/*)
+    // 5. RolesGuard (verifies @MinRole hierarchy)
     {
       provide: APP_GUARD,
       useClass: AppThrottlerGuard,
@@ -67,6 +77,10 @@ import { RolesGuard } from './common/guards/roles.guard';
     {
       provide: APP_GUARD,
       useClass: MustChangePasswordGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: OrgScopeGuard,
     },
     {
       provide: APP_GUARD,
