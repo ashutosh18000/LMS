@@ -299,29 +299,41 @@ export class DashboardService {
             isWfh: true,
           },
         },
+        segmentDays: {
+          where: {
+            date: {
+              gte: DateUtil.parse(today),
+              lte: DateUtil.parse(next7Str),
+            },
+            skipReason: SkipReason.none,
+          },
+        },
       },
       orderBy: { startDate: 'asc' },
     });
 
     // Privacy: Only member info, kind, clipped dates, and portion. NO reason or leave type name.
-    const upcoming = segments.map((s) => {
-      const segStart = DateUtil.format(s.startDate);
-      const segEnd = DateUtil.format(s.endDate);
-      const clippedStart = segStart < today ? today : segStart;
-      const clippedEnd = segEnd > next7Str ? next7Str : segEnd;
+    // Exclude segments that fall strictly on off dates (no working leave days in range)
+    const upcoming = segments
+      .filter((s) => s.segmentDays.length > 0)
+      .map((s) => {
+        const segStart = DateUtil.format(s.startDate);
+        const segEnd = DateUtil.format(s.endDate);
+        const clippedStart = segStart < today ? today : segStart;
+        const clippedEnd = segEnd > next7Str ? next7Str : segEnd;
 
-      return {
-        member: {
-          id: s.user.id,
-          name: s.user.name,
-          department: s.user.department,
-        },
-        kind: s.leaveType.isWfh ? ('wfh' as const) : ('leave' as const),
-        startDate: clippedStart,
-        endDate: clippedEnd,
-        portion: s.portion,
-      };
-    });
+        return {
+          member: {
+            id: s.user.id,
+            name: s.user.name,
+            department: s.user.department,
+          },
+          kind: s.leaveType.isWfh ? ('wfh' as const) : ('leave' as const),
+          startDate: clippedStart,
+          endDate: clippedEnd,
+          portion: s.portion,
+        };
+      });
 
     return {
       today: todayRes.counts,

@@ -15,6 +15,9 @@ describe('ScheduleResolverService (Unit Tests)', () => {
       user: {
         findUnique: jest.fn(),
       },
+      organization: {
+        findUnique: jest.fn(),
+      },
     };
     resolver = new ScheduleResolverService(mockPrisma as PrismaService);
   });
@@ -284,6 +287,68 @@ describe('ScheduleResolverService (Unit Tests)', () => {
       expect(rangeMap.get('2026-11-13')?.weight).toBe(1);
       expect(rangeMap.get('2026-11-14')?.weight).toBe(0);
       expect(rangeMap.get('2026-11-15')?.weight).toBe(0);
+    });
+  });
+
+  describe('resolveRangeForUsers (Batch Date Span Resolution)', () => {
+    it('returns empty Map when passed empty userIds array without querying database', async () => {
+      const res = await resolver.resolveRangeForUsers('org-1', [], '2026-11-01', '2026-11-05');
+      expect(res.size).toBe(0);
+      expect(mockPrisma.employeeSchedule.findMany).not.toHaveBeenCalled();
+      expect(mockPrisma.organization.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('batch resolves schedules for multiple users with different templates in a single query', async () => {
+      mockPrisma.organization.findUnique.mockResolvedValue({
+        workingDays: [1, 2, 3, 4, 5],
+      });
+
+      // User 1: Saturday off
+      // User 2: Saturday half
+      mockPrisma.employeeSchedule.findMany.mockResolvedValue([
+        {
+          userId: 'user-1',
+          effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+          template: { saturdayMode: SaturdayMode.off, alternateOffWeeks: [] },
+        },
+        {
+          userId: 'user-2',
+          effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+          template: { saturdayMode: SaturdayMode.half, alternateOffWeeks: [] },
+        },
+      ]);
+
+      // 2026-11-06 (Fri) to 2026-11-08 (Sun)
+      const res = await resolver.resolveRangeForUsers(
+        'org-1',
+        ['user-1', 'user-2', 'user-3'], // user-3 has no assigned schedule (fallback)
+        '2026-11-06',
+        '2026-11-08',
+      );
+
+      // Exactly 1 query for organization and 1 query for employeeSchedule
+      expect(mockPrisma.organization.findUnique).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.employeeSchedule.findMany).toHaveBeenCalledTimes(1);
+
+      expect(res.size).toBe(3);
+
+      // User 1 (Sat off)
+      const u1 = res.get('user-1')!;
+      expect(u1.get('2026-11-06')).toEqual({ weeklyOff: false, weight: 1 });
+      expect(u1.get('2026-11-07')).toEqual({ weeklyOff: true, weight: 0 }); // Sat
+      expect(u1.get('2026-11-08')).toEqual({ weeklyOff: true, weight: 0 }); // Sun
+
+      // User 2 (Sat half)
+      const u2 = res.get('user-2')!;
+      expect(u2.get('2026-11-06')).toEqual({ weeklyOff: false, weight: 1 });
+      expect(u2.get('2026-11-07')).toEqual({ weeklyOff: false, weight: 0.5 }); // Sat
+      expect(u2.get('2026-11-08')).toEqual({ weeklyOff: true, weight: 0 }); // Sun
+
+      // User 3 (Fallback: Mon-Fri working, Sat-Sun off)
+      const u3 = res.get('user-3')!;
+      expect(u3.get('2026-11-06')).toEqual({ weeklyOff: false, weight: 1 });
+      expect(u3.get('2026-11-07')).toEqual({ weeklyOff: true, weight: 0 });
+      expect(u3.get('2026-11-08')).toEqual({ weeklyOff: true, weight: 0 });
     });
   });
 });

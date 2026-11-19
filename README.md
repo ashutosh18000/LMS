@@ -1354,77 +1354,162 @@ When a user is deactivated (via `PATCH /users/:id/deactivate` or `PATCH /org/hr-
 
 ## 👥 Team Availability & My Team (`/team` & `/my-team`)
 
+### Day Types & Dynamic Work Schedule Resolution
+Availability views evaluate each employee's live work schedule and active organization holidays to determine precise day types rather than assuming a static Monday-Friday working week.
+- **Individual Schedule History**: Evaluates the latest `EmployeeSchedule` effective on or before each date, resolving schedule templates (`saturdayMode`: `off`, `half`, `full`, or `alternate` with `alternateOffWeeks` like `[1, 3]` or `[2, 4]`).
+- **Organization Fallback**: Employees without an assigned schedule template fall back to the organization's configured `workingDays` array (default `[1, 2, 3, 4, 5]`).
+- **Sunday Rule**: Sunday (day 0) is universally resolved as a weekly off (`weight: 0`) across all templates.
+- **Organization Holidays**: Active holidays in the date range mark the day as non-working for all tenant employees.
+- **Batch Resolution Efficiency**: Powered by `ScheduleResolverService.resolveRangeForUsers(orgId, userIds, from, to)`, resolving all employee schedules, templates, holidays, and org working days in a single database round-trip (zero N+1 queries).
+
 ### Strict Privacy & Information Redaction
-- In `/team` and `/my-team` availability responses, all sensitive fields are strictly redacted and never queried from the database.
-- **Allowed Member Fields**: `userId`, `name`, `department`, `segments`
-- **Allowed Segment Fields**: `kind` (`"leave"` | `"wfh"`), `startDate`, `endDate`, `portion` (`"full"` | `"first_half"` | `"second_half"`)
-- **Strictly Redacted**: `reason`, `leaveTypeId`, leave type name, `balance`, `requestId` are 100% absent from responses.
+- Sensitive leave and schedule details are never exposed to team peers or managers.
+- **Allowed Member Fields**: `userId`, `name`, `department`, `offDates`, `halfDates`, `segments` (in range endpoints); `userId`, `name`, `department`, `status`, `portion`, `halfDay` (in today endpoints).
+- **Strictly Redacted**: `reason`, `leaveTypeId`, `leaveTypeName`, `balance`, `scheduleTemplateId`, `templateName`, `saturdayMode`, `alternateOffWeeks` are strictly excluded from queries and responses.
 - **Filtering**: Only approved leave segments are included. Pending, rejected, and cancelled requests are excluded. Date ranges are clipped to `[from, to]`. Inactive users are excluded; active members with no leave in range are returned with `segments: []`.
-- **Date Range Constraints**: `from` and `to` (YYYY-MM-DD), `from <= to`, and maximum range of **92 days** (returns 400 Bad Request if violated).
+- **Date Range Constraints**: `from` and `to` (YYYY-MM-DD), `from <= to`, and maximum range of **92 days** (returns 400 Bad Request if exceeded).
+
+### 💡 Frontend Integration Guide
+
+#### 1. Mutually Exclusive Member Status Values (`/availability/today`)
+Every team member has exactly one top-level `status` on any given day:
+1. **`"off"`**: The day is non-working for this member (Sunday, Organization Holiday, or Employee Weekly Off / Alternate Saturday Off).
+   > **Note on Leaves on Off Days**: If an employee has an approved leave segment covering a non-working day, their status is still shown as `"off"` and they are **not** counted in `counts.onLeave`. This prevents non-working days from artificially inflating active leave counts.
+2. **`"leave"`**: The employee has an approved leave on this working day. Includes `"portion"` (`"full"`, `"first_half"`, `"second_half"`).
+3. **`"wfh"`**: The employee has an approved Work From Home segment on this working day. Includes `"portion"` (`"full"`, `"first_half"`, `"second_half"`).
+4. **`"available"`**: The employee is scheduled to work and has no approved leave/WFH.
+   - If **`halfDay: true`**: The employee's standard schedule for today is a half-day shift (`weight: 0.5`, e.g., Saturday half-day mode). The UI can display a half-day badge or indicator.
+
+#### 2. Single Counting Invariance
+```text
+counts.total === counts.onLeave + counts.wfh + counts.available + counts.off
+```
+
+#### 3. Range Calendar Badging (`/availability`)
+- **`holidays`**: Array of `{ date, name }` objects at the top level for holidays falling within the requested range.
+- **`offDates`**: Sorted array of dates (`YYYY-MM-DD`) where the member is not scheduled to work (Sundays, Org Holidays, or weekly offs).
+- **`halfDates`**: Sorted array of dates (`YYYY-MM-DD`) where the member's regular shift is a half-day (Saturday half, non-holiday).
+- **`segments`**: Approved leave/WFH ranges clipped to the queried window.
+
+---
 
 ### Endpoints
 
 #### 1. `GET /team/availability` (`@MinRole(Role.manager)`)
-Returns availability for the caller's direct reports (`managerId = caller.id`).
-- **Query Params**: `?from=2026-11-15&to=2026-11-20`
-- **Response (`200 OK`)**:
-  ```json
-  [
-    {
-      "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
-      "name": "Alice Developer",
-      "department": "Engineering",
-      "segments": [
-        {
-          "kind": "leave",
-          "startDate": "2026-11-15",
-          "endDate": "2026-11-17",
-          "portion": "full"
-        }
-      ]
-    },
-    {
-      "userId": "b51a0ff1-523e-4d43-a6d1-efd58dca9a78",
-      "name": "Bob Designer",
-      "department": "Engineering",
-      "segments": []
-    }
-  ]
-  ```
-
-#### 2. `GET /team/availability/today` (`@MinRole(Role.manager)`)
-Single-day status for caller's direct reports for today (`ClockService.today(org.timezone)`).
-- Member is counted once: `onLeave`, `wfh`, or `available`. `available = total - onLeave - wfh`.
+Returns range availability for the caller's direct reports (`managerId = caller.id`).
+- **Query Params**: `?from=2026-11-01&to=2026-11-14`
 - **Response (`200 OK`)**:
   ```json
   {
-    "date": "2026-11-15",
-    "counts": {
-      "onLeave": 1,
-      "wfh": 1,
-      "available": 2,
-      "total": 4
-    },
+    "holidays": [
+      {
+        "date": "2026-11-11",
+        "name": "Diwali"
+      }
+    ],
     "members": [
       {
         "userId": "e3048995-c9bf-470a-8bf8-202d088921df",
         "name": "Alice Developer",
         "department": "Engineering",
-        "status": "leave",
-        "portion": "first_half"
+        "offDates": [
+          "2026-11-01",
+          "2026-11-07",
+          "2026-11-08",
+          "2026-11-11",
+          "2026-11-14"
+        ],
+        "halfDates": [],
+        "segments": [
+          {
+            "kind": "leave",
+            "startDate": "2026-11-02",
+            "endDate": "2026-11-04",
+            "portion": "full"
+          }
+        ]
       },
       {
         "userId": "b51a0ff1-523e-4d43-a6d1-efd58dca9a78",
-        "name": "Charlie Engineer",
+        "name": "Bob Designer (Saturday Half-Day Schedule)",
         "department": "Engineering",
-        "status": "wfh",
-        "portion": "full"
+        "offDates": [
+          "2026-11-01",
+          "2026-11-08",
+          "2026-11-11"
+        ],
+        "halfDates": [
+          "2026-11-07",
+          "2026-11-14"
+        ],
+        "segments": []
+      }
+    ]
+  }
+  ```
+
+#### 2. `GET /team/availability/today` (`@MinRole(Role.manager)`)
+Single-day availability and day-type status for caller's direct reports for today (`ClockService.today(org.timezone)`).
+- **Saturday Resolution Scenarios Example**:
+  On Saturday, 7 November 2026 (1st Saturday of the month):
+  - User A (Saturday Off): `status: "off"`
+  - User B (Saturday Half): `status: "available"`, `halfDay: true`
+  - User C (Saturday Full): `status: "available"`
+  - User D (Alternate 1st & 3rd Off): `status: "off"` (Week 1 Saturday)
+  - User E (Alternate 2nd & 4th Off): `status: "available"` (Week 1 Saturday is working)
+  - User F (Default 5-day Org Fallback): `status: "off"`
+- **Response (`200 OK`)**:
+  ```json
+  {
+    "date": "2026-11-07",
+    "dayInfo": {
+      "isHoliday": false,
+      "holidayName": null
+    },
+    "counts": {
+      "onLeave": 0,
+      "wfh": 0,
+      "available": 3,
+      "off": 3,
+      "total": 6
+    },
+    "members": [
+      {
+        "userId": "11111111-1111-1111-1111-111111111111",
+        "name": "User A (Saturday Off)",
+        "department": "Engineering",
+        "status": "off"
       },
       {
-        "userId": "f891ab02-992a-4ce2-b883-99dca0293112",
-        "name": "Bob Designer",
+        "userId": "22222222-2222-2222-2222-222222222222",
+        "name": "User B (Saturday Half)",
+        "department": "Engineering",
+        "status": "available",
+        "halfDay": true
+      },
+      {
+        "userId": "33333333-3333-3333-3333-333333333333",
+        "name": "User C (Saturday Full)",
         "department": "Engineering",
         "status": "available"
+      },
+      {
+        "userId": "44444444-4444-4444-4444-444444444444",
+        "name": "User D (Alternate 1st & 3rd)",
+        "department": "Engineering",
+        "status": "off"
+      },
+      {
+        "userId": "55555555-5555-5555-5555-555555555555",
+        "name": "User E (Alternate 2nd & 4th)",
+        "department": "Engineering",
+        "status": "available"
+      },
+      {
+        "userId": "66666666-6666-6666-6666-666666666666",
+        "name": "User F (Org Default 5-day)",
+        "department": "Engineering",
+        "status": "off"
       }
     ]
   }
@@ -1435,13 +1520,13 @@ Team availability view accessible to all organization members:
 - **Staff**: Peers reporting to the same manager (excluding caller) + caller's manager. Enables staff to see their manager's approved leaves!
 - **Manager**: Direct reports.
 - **HR Admin / Org Owner**: Direct reports if any, or peers reporting to their manager.
-- **Unassigned Staff (no manager)**: Returns empty array `[]`.
-- **Query Params**: `?from=2026-11-15&to=2026-11-20`
-- **Response (`200 OK`)**: Same privacy-redacted response format as `/team/availability`.
+- **Unassigned Staff (no manager)**: Returns `{ holidays: [], members: [] }`.
+- **Query Params**: `?from=2026-11-01&to=2026-11-14`
+- **Response (`200 OK`)**: Same privacy-redacted `{ holidays, members }` response format as `/team/availability`.
 
 #### 4. `GET /my-team/availability/today` (All Logged-in Tenant Users)
 Today's team availability status and counts for the caller's team.
-- **Response (`200 OK`)**: Same response format as `/team/availability/today`.
+- **Response (`200 OK`)**: Same `{ date, dayInfo, counts, members }` response format as `/team/availability/today`.
 
 ---
 
@@ -1636,8 +1721,8 @@ Personal overview:
 
 ### 2. `GET /dashboard/team` (`@MinRole(Role.manager)`)
 Manager's team dashboard:
-- `today`: Real-time counts (`onLeave`, `wfh`, `available`, `total`).
-- `upcoming`: Direct reports' approved leave/WFH in the next 7 days (`member`, `kind`, `startDate`, `endDate`, `portion`).
+- `today`: Real-time day-type counts (`onLeave`, `wfh`, `available`, `off`, `total`).
+- `upcoming`: Direct reports' approved leave/WFH in the next 7 days (`member`, `kind`, `startDate`, `endDate`, `portion`). Leaves that fall strictly on non-working/off dates are filtered out so managers only see actionable upcoming absences.
 - Privacy: No leave type name, no reason.
 - **Response (`200 OK`)**:
   ```json
@@ -1645,7 +1730,8 @@ Manager's team dashboard:
     "today": {
       "onLeave": 1,
       "wfh": 0,
-      "available": 3,
+      "available": 2,
+      "off": 1,
       "total": 4
     },
     "upcoming": [
@@ -1740,17 +1826,36 @@ Executive view for Organization Owner:
 ```bash
 npm test
 ```
-**Test Results (45/45 Passed across 4 suites)**:
-- `test/schedule-resolver.spec.ts` (21 tests passed)
+**Test Results (47/47 Passed across 4 suites)**:
+- `test/schedule-resolver.spec.ts` (23 tests passed):
+  - Sunday rule (weight 0, weekly off)
+  - Org fallback to `workingDays`
+  - Assigned template Saturday modes (`off`, `half`, `full`)
+  - Alternate Saturday rules (`[1, 3]` and `[2, 4]`) across months
+  - Schedule transitions over time (effectiveFrom)
+  - Span resolution (`resolveRange`)
+  - Batch date span resolution (`resolveRangeForUsers`) with single-query efficiency
 - `test/leave-year.spec.ts` (12 tests passed)
-- `test/leave-counting.spec.ts` (10 tests passed)
-- `test/clock.spec.ts` (2 tests passed)
+- `test/leave-counting.spec.ts` (9 tests passed)
+- `test/clock.spec.ts` (3 tests passed)
 
 ### End-to-End Test Suites
 ```bash
 npm run test:e2e
 ```
-**Test Results (116/116 Passed across 7 suites)**:
+**Test Results (129/129 Passed across 8 suites)**:
+- `test/team-schedule-availability.e2e-spec.ts` (13 tests passed):
+  - Saturday resolution across 6 schedule variants (A: Sat off, B: Sat half, C: Sat full, D: alternate [1,3], E: alternate [2,4], F: fallback [1..5])
+  - Evaluation across all November 2026 Saturdays (Nov 7, 14, 21, 28)
+  - Universal Sunday off rule across all employees regardless of template
+  - Weekday organization holiday (`dayInfo.isHoliday: true`, `holidayName`, all members off)
+  - Approved leave on off day shows status as `"off"` (not counted in leave); working Saturday shows `"leave"` or `"wfh"`
+  - Single counting invariant (`total = onLeave + wfh + available + off`)
+  - 14-day range with `holidays` at top-level and member `offDates` and `halfDates`
+  - Date range validation (>92 days rejected with 400 Bad Request)
+  - Batch schedule resolution query efficiency spy (exactly 1 `employeeSchedule` query for 50 members)
+  - Strict privacy deep-scan (zero leak of templates, rules, reasons, or balances)
+  - `/my-team/availability` and `/dashboard/team` day-type alignment
 - `test/views-reports-dashboards.e2e-spec.ts` (17 tests passed):
   - `OrgScopeGuard` enforcement: root access to `/platform/*`, `/auth/*`, `/health` allowed; org routes blocked with 403 (`"Root org ke andar kaam nahi karta"`); non-root blocked from `/platform/*` (403)
   - Deep privacy & allowed keys scan on `/team` and `/my-team`: strictly no leakage of reason, leaveTypeId, leave type name, balance, or requestId
@@ -1769,3 +1874,5 @@ npm run test:e2e
 - `test/hr-setup.e2e-spec.ts` (16 tests passed)
 - `test/platform-org.e2e-spec.ts` (11 tests passed)
 - `test/auth.e2e-spec.ts` (12 tests passed)
+
+**Total Automated Tests: 176 / 176 Passing**

@@ -341,12 +341,15 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         .set('Authorization', `Bearer ${managerToken}`);
 
       expect(teamRes.status).toBe(200);
-      expect(teamRes.body).toHaveLength(1);
-      const member = teamRes.body[0];
+      expect(Object.keys(teamRes.body).sort()).toEqual(
+        ['holidays', 'members'].sort(),
+      );
+      expect(teamRes.body.members).toHaveLength(1);
+      const member = teamRes.body.members[0];
 
       // Exact allowed keys for member
       expect(Object.keys(member).sort()).toEqual(
-        ['userId', 'name', 'department', 'segments'].sort(),
+        ['department', 'halfDates', 'name', 'offDates', 'segments', 'userId'].sort(),
       );
 
       expect(member.segments).toHaveLength(1);
@@ -371,15 +374,15 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
 
       expect(todayRes.status).toBe(200);
       expect(Object.keys(todayRes.body).sort()).toEqual(
-        ['date', 'counts', 'members'].sort(),
+        ['counts', 'date', 'dayInfo', 'members'].sort(),
       );
       expect(Object.keys(todayRes.body.counts).sort()).toEqual(
-        ['available', 'onLeave', 'total', 'wfh'].sort(),
+        ['available', 'off', 'onLeave', 'total', 'wfh'].sort(),
       );
       expect(todayRes.body.members).toHaveLength(1);
       const todayMember = todayRes.body.members[0];
       expect(Object.keys(todayMember).sort()).toEqual(
-        ['department', 'name', 'portion', 'status', 'userId'].sort(),
+        ['department', 'name', 'status', 'userId'].sort(),
       );
 
       const stringifiedToday = JSON.stringify(todayRes.body);
@@ -483,9 +486,9 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         .set('Authorization', `Bearer ${managerToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2); // report1 and report2, excluding deactivated and otherStaff
+      expect(res.body.members).toHaveLength(2); // report1 and report2, excluding deactivated and otherStaff
 
-      const r1Data = res.body.find((m: any) => m.userId === report1.id);
+      const r1Data = res.body.members.find((m: any) => m.userId === report1.id);
       expect(r1Data).toBeDefined();
       expect(r1Data.segments).toHaveLength(1);
       expect(r1Data.segments[0]).toEqual({
@@ -495,7 +498,7 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         portion: Portion.first_half,
       });
 
-      const r2Data = res.body.find((m: any) => m.userId === report2.id);
+      const r2Data = res.body.members.find((m: any) => m.userId === report2.id);
       expect(r2Data).toBeDefined();
       expect(r2Data.segments).toEqual([]);
     });
@@ -529,22 +532,25 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
       const ltCasual = await createLeaveType(org.id, { name: 'Casual Leave', isWfh: false });
       const ltWfh = await createLeaveType(org.id, { name: 'Work From Home', isWfh: true });
 
-      // Today is fixed to 2026-11-15
-      await createApprovedLeaveRequest(org.id, repLeave, ltCasual, '2026-11-15', '2026-11-15', {
+      // Fixed today is set to 2026-11-18 (Wednesday, a regular working day)
+      clockService.setFixedToday('2026-11-18');
+
+      await createApprovedLeaveRequest(org.id, repLeave, ltCasual, '2026-11-18', '2026-11-18', {
         portion: Portion.first_half,
       });
-      await createApprovedLeaveRequest(org.id, repWfh, ltWfh, '2026-11-15', '2026-11-15');
+      await createApprovedLeaveRequest(org.id, repWfh, ltWfh, '2026-11-18', '2026-11-18');
 
       const res = await request(app.getHttpServer())
         .get('/team/availability/today')
         .set('Authorization', `Bearer ${managerToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body.date).toBe('2026-11-15');
+      expect(res.body.date).toBe('2026-11-18');
       expect(res.body.counts).toEqual({
         onLeave: 1,
         wfh: 1,
         available: 1,
+        off: 0,
         total: 3,
       });
 
@@ -596,14 +602,14 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         .set('Authorization', `Bearer ${staff1Token}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toHaveLength(2); // Staff 2 and Boss Manager (Staff 1 excluded)
+      expect(res.body.members).toHaveLength(2); // Staff 2 and Boss Manager (Staff 1 excluded)
 
-      const memberIds = res.body.map((m: any) => m.userId);
+      const memberIds = res.body.members.map((m: any) => m.userId);
       expect(memberIds).toContain(staff2.id);
       expect(memberIds).toContain(manager.id);
       expect(memberIds).not.toContain(staff1.id);
 
-      const boss = res.body.find((m: any) => m.userId === manager.id);
+      const boss = res.body.members.find((m: any) => m.userId === manager.id);
       expect(boss.segments).toHaveLength(1);
       expect(boss.segments[0].kind).toBe('leave');
     });
@@ -621,7 +627,7 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         .set('Authorization', `Bearer ${soloToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual([]);
+      expect(res.body.members).toEqual([]);
     });
 
     it('enforces 92 days maximum range limit (400 if exceeded or from > to)', async () => {

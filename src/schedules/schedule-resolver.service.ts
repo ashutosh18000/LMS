@@ -261,4 +261,137 @@ export class ScheduleResolverService {
 
     return result;
   }
+
+  /**
+   * Batch resolves date ranges for multiple users in an organization in a single query.
+   * Avoids N+1 queries by fetching all employee schedules and templates in one call.
+   * Returns a Map of userId -> Map<dateStr, { weeklyOff, weight }>.
+   */
+  async resolveRangeForUsers(
+    orgId: string,
+    userIds: string[],
+    from: Date | string,
+    to: Date | string,
+    client?: PrismaService | Prisma.TransactionClient,
+  ): Promise<Map<string, Map<string, { weeklyOff: boolean; weight: number }>>> {
+    const db = (client as any) ?? this.prisma;
+    const startStr =
+      typeof from === 'string'
+        ? from.substring(0, 10)
+        : DateUtil.format(from);
+    const endStr =
+      typeof to === 'string'
+        ? to.substring(0, 10)
+        : DateUtil.format(to);
+    const endDateObj = DateUtil.parse(endStr);
+    const dates = DateUtil.iterate(startStr, endStr);
+
+    const resultMap = new Map<
+      string,
+      Map<string, { weeklyOff: boolean; weight: number }>
+    >();
+
+    if (!userIds || userIds.length === 0) {
+      return resultMap;
+    }
+
+    const uniqueUserIds = Array.from(new Set(userIds));
+
+    // 1. Fetch organization default working days (single query)
+    const org = await db.organization.findUnique({
+      where: { id: orgId },
+      select: { workingDays: true },
+    });
+    const defaultWorkingDays: number[] = org?.workingDays ?? [1, 2, 3, 4, 5];
+
+    // 2. Fetch all employee schedules effective on or before endDate for all users (single query)
+    const schedules = await db.employeeSchedule.findMany({
+      where: {
+        userId: { in: uniqueUserIds },
+        effectiveFrom: { lte: endDateObj },
+      },
+      orderBy: { effectiveFrom: 'desc' },
+      include: { template: true },
+    });
+
+    // 3. Group schedules by userId
+    const schedulesByUserId = new Map<string, typeof schedules>();
+    for (const s of schedules) {
+      const list = schedulesByUserId.get(s.userId) || [];
+      list.push(s);
+      schedulesByUserId.set(s.userId, list);
+    }
+
+    // 4. Resolve each user's schedule per date in range
+    for (const uId of uniqueUserIds) {
+      const userSchedules = schedulesByUserId.get(uId) || [];
+      const userDateMap = new Map<
+        string,
+        { weeklyOff: boolean; weight: number }
+      >();
+
+      for (const dateStr of dates) {
+        const dateObj = DateUtil.parse(dateStr);
+        const dayOfWeek = dateObj.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+        const dayOfMonth = dateObj.getUTCDate();
+
+        // Sunday is always off (weight 0)
+        if (dayOfWeek === 0) {
+          userDateMap.set(dateStr, { weeklyOff: true, weight: 0 });
+          continue;
+        }
+
+        // Find active schedule effective on or before dateObj (ordered desc by effectiveFrom)
+        const schedule = userSchedules.find(
+          (s: any) => s.effectiveFrom <= dateObj,
+        );
+
+        if (schedule?.template) {
+          const template = schedule.template;
+
+          // Monday - Friday: regular full working day
+          if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+            userDateMap.set(dateStr, { weeklyOff: false, weight: 1 });
+            continue;
+          }
+
+          // Saturday (dayOfWeek === 6)
+          if (dayOfWeek === 6) {
+            switch (template.saturdayMode) {
+              case SaturdayMode.off:
+                userDateMap.set(dateStr, { weeklyOff: true, weight: 0 });
+                break;
+              case SaturdayMode.half:
+                userDateMap.set(dateStr, { weeklyOff: false, weight: 0.5 });
+                break;
+              case SaturdayMode.full:
+                userDateMap.set(dateStr, { weeklyOff: false, weight: 1 });
+                break;
+              case SaturdayMode.alternate: {
+                const weekNumber = Math.ceil(dayOfMonth / 7);
+                const isOff = template.alternateOffWeeks.includes(weekNumber);
+                userDateMap.set(dateStr, {
+                  weeklyOff: isOff,
+                  weight: isOff ? 0 : 1,
+                });
+                break;
+              }
+            }
+            continue;
+          }
+        }
+
+        // Fallback: organization workingDays
+        const isWorking = defaultWorkingDays.includes(dayOfWeek);
+        userDateMap.set(dateStr, {
+          weeklyOff: !isWorking,
+          weight: isWorking ? 1 : 0,
+        });
+      }
+
+      resultMap.set(uId, userDateMap);
+    }
+
+    return resultMap;
+  }
 }
