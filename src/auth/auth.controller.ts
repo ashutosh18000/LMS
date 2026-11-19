@@ -15,7 +15,10 @@ import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Auth')
+@ApiBearerAuth('JWT-auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

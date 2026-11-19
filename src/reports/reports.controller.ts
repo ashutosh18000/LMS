@@ -8,7 +8,10 @@ import { QueryCalendarDto } from './dto/query-calendar.dto';
 import { QueryOnLeaveDto } from './dto/query-on-leave.dto';
 import { QueryBalanceSummaryDto } from './dto/query-balance-summary.dto';
 import { QueryUtilizationDto } from './dto/query-utilization.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Reports & Calendar (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @Controller('reports')
 @MinRole(Role.hr_admin)
 export class ReportsController {

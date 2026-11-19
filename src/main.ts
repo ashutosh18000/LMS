@@ -77,7 +77,16 @@ async function bootstrap() {
   // 8. Global Exception Filter
   app.useGlobalFilters(new GlobalExceptionFilter(configService));
 
-  // 9. Shutdown hooks
+  // 9. Swagger OpenAPI Documentation
+  const nodeEnv = configService.get<string>('NODE_ENV') || 'development';
+  const swaggerEnabled = configService.get<string>('SWAGGER_ENABLED') === 'true' || nodeEnv !== 'production';
+  if (swaggerEnabled) {
+    const { setupSwagger } = await import('./swagger/swagger.config');
+    setupSwagger(app);
+    logger.log('Swagger documentation initialized at /docs');
+  }
+
+  // 10. Shutdown hooks
   app.enableShutdownHooks();
 
   const port = configService.get<number>('PORT', 3000);

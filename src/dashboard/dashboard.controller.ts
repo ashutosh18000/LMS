@@ -1,9 +1,12 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { MinRole } from '../common/decorators/min-role.decorator';
 import { DashboardService } from './dashboard.service';
 
+@ApiTags('Dashboards')
+@ApiBearerAuth('JWT-auth')
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}

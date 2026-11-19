@@ -20,6 +20,10 @@ import { OrgActionReasonDto } from './dto/org-action-reason.dto';
 import { ReplaceOwnerDto } from './dto/replace-owner.dto';
 import { ResetOwnerPasswordDto } from './dto/reset-owner-password.dto';
 
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Platform (Root)')
+@ApiBearerAuth('JWT-auth')
 @Throttle({ platform: { limit: 20, ttl: 60000 } })
 @MinRole(Role.root)
 @Controller('platform')

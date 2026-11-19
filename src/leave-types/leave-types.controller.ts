@@ -15,7 +15,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { LeaveTypesService } from './leave-types.service';
 import { CreateLeaveTypeDto } from './dto/create-leave-type.dto';
 import { UpdateLeaveTypeDto } from './dto/update-leave-type.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Leave Types (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @Controller('leave-types')
 export class LeaveTypesController {
   constructor(private readonly leaveTypesService: LeaveTypesService) {}

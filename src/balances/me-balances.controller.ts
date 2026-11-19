@@ -1,7 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { BalancesService } from './balances.service';
 
+@ApiTags('Leave Balances')
+@ApiBearerAuth('JWT-auth')
 @Controller('me')
 export class MeBalancesController {
   constructor(private readonly balancesService: BalancesService) {}

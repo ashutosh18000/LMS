@@ -21,7 +21,10 @@ import { DeactivateHrAdminDto } from './dto/deactivate-hr-admin.dto';
 import { QueryHrAdminsDto } from './dto/query-hr-admins.dto';
 import { TransferOwnershipDto } from './dto/transfer-ownership.dto';
 import { QueryOrgAuditLogsDto } from './dto/query-audit-logs.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Organization (Owner)')
+@ApiBearerAuth('JWT-auth')
 @MinRole(Role.org_owner)
 @Controller('org')
 export class OrgController {

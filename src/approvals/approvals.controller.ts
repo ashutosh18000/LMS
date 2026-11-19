@@ -15,7 +15,10 @@ import { ApprovalsService } from './approvals.service';
 import { QueryPendingApprovalsDto } from './dto/query-pending-approvals.dto';
 import { ApproveRequestDto } from './dto/approve-request.dto';
 import { RejectRequestDto } from './dto/reject-request.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Approvals (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @MinRole(Role.hr_admin)
 @Controller('approvals')
 export class ApprovalsController {

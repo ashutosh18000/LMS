@@ -1,0 +1,2431 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "HealthController_getHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "HealthController_getReadiness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/change-password": {
+      "post": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/users": {
+      "post": {
+        "operationId": "UsersController_createUser",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      },
+      "get": {
+        "operationId": "UsersController_getUsers",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "operationId": "UsersController_getUserById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      },
+      "patch": {
+        "operationId": "UsersController_updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/deactivate": {
+      "patch": {
+        "operationId": "UsersController_deactivateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/reactivate": {
+      "patch": {
+        "operationId": "UsersController_reactivateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/reassign-reports": {
+      "post": {
+        "operationId": "UsersController_reassignReports",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReassignReportsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/reset-password": {
+      "post": {
+        "operationId": "UsersController_resetPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetUserPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/schedule": {
+      "post": {
+        "operationId": "UsersController_assignSchedule",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignScheduleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/schedules": {
+      "get": {
+        "operationId": "UsersController_getUserSchedules",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/users/{id}/balances": {
+      "get": {
+        "operationId": "UsersController_getUserBalances",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Users (HR Admin)"
+        ]
+      }
+    },
+    "/schedule-templates": {
+      "post": {
+        "operationId": "ScheduleTemplatesController_createTemplate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduleTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      },
+      "get": {
+        "operationId": "ScheduleTemplatesController_getTemplates",
+        "parameters": [
+          {
+            "name": "active",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      }
+    },
+    "/schedule-templates/{id}": {
+      "get": {
+        "operationId": "ScheduleTemplatesController_getTemplateById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      },
+      "patch": {
+        "operationId": "ScheduleTemplatesController_updateTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScheduleTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      }
+    },
+    "/schedule-templates/{id}/deactivate": {
+      "patch": {
+        "operationId": "ScheduleTemplatesController_deactivateTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      }
+    },
+    "/schedule-templates/{id}/reactivate": {
+      "patch": {
+        "operationId": "ScheduleTemplatesController_reactivateTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      }
+    },
+    "/me/schedule": {
+      "get": {
+        "operationId": "MeScheduleController_getMySchedule",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Work Schedules (HR Admin)"
+        ]
+      }
+    },
+    "/balances/allocate": {
+      "post": {
+        "operationId": "BalancesController_allocateBalances",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AllocateBalancesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/balances/adjust": {
+      "post": {
+        "operationId": "BalancesController_adjustBalance",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustBalanceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/balances": {
+      "get": {
+        "operationId": "BalancesController_getBalances",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/balances/carry-forward/preview": {
+      "post": {
+        "operationId": "BalancesController_previewCarryForward",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CarryForwardDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/balances/carry-forward/run": {
+      "post": {
+        "operationId": "BalancesController_runCarryForward",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CarryForwardDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/me/balances": {
+      "get": {
+        "operationId": "MeBalancesController_getMyBalances",
+        "parameters": [
+          {
+            "name": "year",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Balances"
+        ]
+      }
+    },
+    "/leave-requests": {
+      "post": {
+        "operationId": "LeaveRequestsController_createLeaveRequest",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeaveRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      },
+      "get": {
+        "operationId": "LeaveRequestsController_getAllRequests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/preview": {
+      "post": {
+        "operationId": "LeaveRequestsController_previewLeaveRequest",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeaveRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/on-behalf": {
+      "post": {
+        "operationId": "LeaveRequestsController_applyOnBehalf",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOnBehalfDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/mine": {
+      "get": {
+        "operationId": "LeaveRequestsController_getMyRequests",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/{id}": {
+      "get": {
+        "operationId": "LeaveRequestsController_getRequestById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/{id}/cancel": {
+      "post": {
+        "operationId": "LeaveRequestsController_cancelLeaveRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-requests/{id}/cancel-approved": {
+      "post": {
+        "operationId": "LeaveRequestsController_cancelApprovedLeave",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelApprovedLeaveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Requests"
+        ]
+      }
+    },
+    "/leave-types": {
+      "post": {
+        "operationId": "LeaveTypesController_createLeaveType",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLeaveTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      },
+      "get": {
+        "operationId": "LeaveTypesController_getLeaveTypes",
+        "parameters": [
+          {
+            "name": "includeInactive",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      }
+    },
+    "/leave-types/{id}": {
+      "get": {
+        "operationId": "LeaveTypesController_getLeaveTypeById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      },
+      "patch": {
+        "operationId": "LeaveTypesController_updateLeaveType",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLeaveTypeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      }
+    },
+    "/leave-types/{id}/deactivate": {
+      "patch": {
+        "operationId": "LeaveTypesController_deactivateLeaveType",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      }
+    },
+    "/leave-types/{id}/reactivate": {
+      "patch": {
+        "operationId": "LeaveTypesController_reactivateLeaveType",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Leave Types (HR Admin)"
+        ]
+      }
+    },
+    "/holidays": {
+      "post": {
+        "operationId": "HolidaysController_createHoliday",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHolidayDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      },
+      "get": {
+        "operationId": "HolidaysController_getHolidays",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      }
+    },
+    "/holidays/manage": {
+      "get": {
+        "operationId": "HolidaysController_getManageHolidays",
+        "parameters": [
+          {
+            "name": "year",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      }
+    },
+    "/holidays/{id}": {
+      "get": {
+        "operationId": "HolidaysController_getHolidayById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      },
+      "patch": {
+        "operationId": "HolidaysController_updateHoliday",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateHolidayDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      }
+    },
+    "/holidays/{id}/deactivate": {
+      "patch": {
+        "operationId": "HolidaysController_deactivateHoliday",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      }
+    },
+    "/holidays/{id}/reactivate": {
+      "patch": {
+        "operationId": "HolidaysController_reactivateHoliday",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Holidays (HR Admin)"
+        ]
+      }
+    },
+    "/approvals/pending": {
+      "get": {
+        "operationId": "ApprovalsController_getPendingApprovals",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Approvals (HR Admin)"
+        ]
+      }
+    },
+    "/approvals/{id}": {
+      "get": {
+        "operationId": "ApprovalsController_getApprovalById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Approvals (HR Admin)"
+        ]
+      }
+    },
+    "/approvals/{id}/approve": {
+      "post": {
+        "operationId": "ApprovalsController_approveRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Approvals (HR Admin)"
+        ]
+      }
+    },
+    "/approvals/{id}/reject": {
+      "post": {
+        "operationId": "ApprovalsController_rejectRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Approvals (HR Admin)"
+        ]
+      }
+    },
+    "/platform/organizations": {
+      "post": {
+        "operationId": "PlatformController_createOrganization",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      },
+      "get": {
+        "operationId": "PlatformController_getOrganizations",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/platform/organizations/{id}": {
+      "get": {
+        "operationId": "PlatformController_getOrganizationById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/platform/organizations/{id}/suspend": {
+      "patch": {
+        "operationId": "PlatformController_suspendOrganization",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgActionReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/platform/organizations/{id}/activate": {
+      "patch": {
+        "operationId": "PlatformController_activateOrganization",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrgActionReasonDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/platform/organizations/{id}/replace-owner": {
+      "post": {
+        "operationId": "PlatformController_replaceOwner",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceOwnerDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/platform/organizations/{id}/reset-owner-password": {
+      "post": {
+        "operationId": "PlatformController_resetOwnerPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetOwnerPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Platform (Root)"
+        ]
+      }
+    },
+    "/org/settings": {
+      "get": {
+        "operationId": "OrgController_getSettings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      },
+      "patch": {
+        "operationId": "OrgController_updateSettings",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrgSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/hr-admins": {
+      "post": {
+        "operationId": "OrgController_createHrAdmin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateHrAdminDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      },
+      "get": {
+        "operationId": "OrgController_getHrAdmins",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/hr-admins/promote": {
+      "post": {
+        "operationId": "OrgController_promoteHrAdmin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteHrAdminDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/hr-admins/{id}/demote": {
+      "post": {
+        "operationId": "OrgController_demoteHrAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoteHrAdminDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/hr-admins/{id}/deactivate": {
+      "patch": {
+        "operationId": "OrgController_deactivateHrAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeactivateHrAdminDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/hr-admins/{id}/reactivate": {
+      "patch": {
+        "operationId": "OrgController_reactivateHrAdmin",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/transfer-ownership": {
+      "post": {
+        "operationId": "OrgController_transferOwnership",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/org/audit-logs": {
+      "get": {
+        "operationId": "OrgController_getAuditLogs",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Organization (Owner)"
+        ]
+      }
+    },
+    "/team/availability": {
+      "get": {
+        "operationId": "TeamController_getAvailability",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Team Availability"
+        ]
+      }
+    },
+    "/team/availability/today": {
+      "get": {
+        "operationId": "TeamController_getToday",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Team Availability"
+        ]
+      }
+    },
+    "/my-team/availability": {
+      "get": {
+        "operationId": "MyTeamController_getAvailability",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Team Availability"
+        ]
+      }
+    },
+    "/my-team/availability/today": {
+      "get": {
+        "operationId": "MyTeamController_getToday",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Team Availability"
+        ]
+      }
+    },
+    "/reports/calendar": {
+      "get": {
+        "operationId": "ReportsController_getCalendar",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Reports & Calendar (HR Admin)"
+        ]
+      }
+    },
+    "/reports/on-leave": {
+      "get": {
+        "operationId": "ReportsController_getOnLeave",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Reports & Calendar (HR Admin)"
+        ]
+      }
+    },
+    "/reports/balance-summary": {
+      "get": {
+        "operationId": "ReportsController_getBalanceSummary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Reports & Calendar (HR Admin)"
+        ]
+      }
+    },
+    "/reports/utilization": {
+      "get": {
+        "operationId": "ReportsController_getUtilization",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Reports & Calendar (HR Admin)"
+        ]
+      }
+    },
+    "/dashboard/me": {
+      "get": {
+        "operationId": "DashboardController_getMe",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/dashboard/team": {
+      "get": {
+        "operationId": "DashboardController_getTeam",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/dashboard/hr": {
+      "get": {
+        "operationId": "DashboardController_getHr",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/dashboard/owner": {
+      "get": {
+        "operationId": "DashboardController_getOwner",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Leave Management System API",
+    "description": "## Multi-tenant Leave Management System Backend\nProduction-ready API for enterprise employee leave and work schedule management.\n\n### Key Business Invariants & Error Codes:\n- **OVERLAP**: The requested leave or WFH dates conflict with an existing active request.\n- **INSUFFICIENT_BALANCE**: Requested leave days exceed the available allocated balance for this leave type and financial year.\n- **NO_BALANCE**: No leave balance has been allocated for this employee, leave type, and financial year.\n- **MONTHLY_LIMIT_EXCEEDED**: Requested days in this calendar month exceed the configured monthly cap for this leave type.\n- **PAST_LEAVE_NOT_ALLOWED**: Leave dates are further in the past than the organization's `backdateAllowedDays` window.\n- **EXCEEDS_MAX_CONSECUTIVE_DAYS**: The continuous leave span exceeds the policy limit.\n- **ZERO_COUNTED_DAYS**: The requested segment falls strictly on non-working days (Sundays, holidays, or weekly offs).\n- **INVALID_SEGMENTS**: The request segments array is empty or inconsistent.\n- **UNAUTHORIZED_CANCELLATION**: Only the employee or an HR administrator can cancel requests.\n- **ALREADY_DECIDED**: The request has already been approved, rejected, or cancelled.\n\n### Role Hierarchy (RBAC):\n- **root**: Platform super-administrator (`/platform/*`)\n- **org_owner**: Organization owner (`/org/*`)\n- **hr_admin**: HR administrator (manages users, leave types, schedules, holidays, balances, approvals, reports)\n- **manager**: Department/team manager (`/team/*`, `/dashboard/team`)\n- **staff**: Tenant employee (`/leave-requests/*`, `/my-team/*`, `/dashboard/me`)\n",
+    "version": "1.0.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "JWT-auth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "name": "Authorization",
+        "description": "Enter your JWT access token (15-minute validity)",
+        "in": "header"
+      }
+    },
+    "schemas": {
+      "LoginDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ReassignReportsDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ResetUserPasswordDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AssignScheduleDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateScheduleTemplateDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateScheduleTemplateDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AllocateBalancesDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "AdjustBalanceDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CarryForwardDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateLeaveRequestDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateOnBehalfDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CancelApprovedLeaveDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateLeaveTypeDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateLeaveTypeDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateHolidayDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateHolidayDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ApproveRequestDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "RejectRequestDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateOrganizationDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "OrgActionReasonDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ReplaceOwnerDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "ResetOwnerPasswordDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateOrgSettingsDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "CreateHrAdminDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "PromoteHrAdminDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DemoteHrAdminDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "DeactivateHrAdminDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "TransferOwnershipDto": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  }
+}

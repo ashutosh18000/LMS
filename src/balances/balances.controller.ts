@@ -15,7 +15,10 @@ import { AllocateBalancesDto } from './dto/allocate-balances.dto';
 import { AdjustBalanceDto } from './dto/adjust-balance.dto';
 import { QueryBalancesDto } from './dto/query-balances.dto';
 import { CarryForwardDto } from './dto/carry-forward.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Leave Balances')
+@ApiBearerAuth('JWT-auth')
 @MinRole(Role.hr_admin)
 @Controller('balances')
 export class BalancesController {

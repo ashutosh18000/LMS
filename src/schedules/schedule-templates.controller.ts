@@ -15,7 +15,10 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { SchedulesService } from './schedules.service';
 import { CreateScheduleTemplateDto } from './dto/create-schedule-template.dto';
 import { UpdateScheduleTemplateDto } from './dto/update-schedule-template.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Work Schedules (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @MinRole(Role.hr_admin)
 @Controller('schedule-templates')
 export class ScheduleTemplatesController {

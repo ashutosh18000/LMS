@@ -2,8 +2,11 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { DateRangeDto, validateDateRange } from '../common/dto/date-range.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 
+@ApiTags('Team Availability')
+@ApiBearerAuth('JWT-auth')
 @Controller('my-team')
 export class MyTeamController {
   constructor(private readonly teamService: TeamService) {}

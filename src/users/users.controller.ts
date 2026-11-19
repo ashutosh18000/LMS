@@ -21,7 +21,10 @@ import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { SchedulesService } from '../schedules/schedules.service';
 import { AssignScheduleDto } from '../schedules/dto/assign-schedule.dto';
 import { BalancesService } from '../balances/balances.service';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Users (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @MinRole(Role.hr_admin)
 @Controller('users')
 export class UsersController {

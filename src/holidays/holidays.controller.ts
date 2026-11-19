@@ -16,7 +16,10 @@ import { HolidaysService } from './holidays.service';
 import { CreateHolidayDto } from './dto/create-holiday.dto';
 import { UpdateHolidayDto } from './dto/update-holiday.dto';
 import { QueryHolidaysDto } from './dto/query-holidays.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Holidays (HR Admin)')
+@ApiBearerAuth('JWT-auth')
 @Controller('holidays')
 export class HolidaysController {
   constructor(private readonly holidaysService: HolidaysService) {}

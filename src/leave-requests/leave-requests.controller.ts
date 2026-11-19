@@ -17,7 +17,10 @@ import { QueryLeaveRequestsDto } from './dto/query-leave-requests.dto';
 import { CreateOnBehalfDto } from './dto/create-on-behalf.dto';
 import { CancelApprovedLeaveDto } from './dto/cancel-approved.dto';
 import { QueryAllRequestsDto } from './dto/query-all-requests.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Leave Requests')
+@ApiBearerAuth('JWT-auth')
 @Controller('leave-requests')
 export class LeaveRequestsController {
   constructor(private readonly leaveRequestsService: LeaveRequestsService) {}

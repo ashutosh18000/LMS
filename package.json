@@ -16,7 +16,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
     "test": "jest --config ./test/jest.json --runInBand --forceExit",
-    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit"
+    "test:e2e": "jest --config ./test/jest-e2e.json --runInBand --forceExit",
+    "openapi:export": "ts-node -r tsconfig-paths/register scripts/export-openapi.ts"
   },
   "prisma": {
     "seed": "ts-node -r tsconfig-paths/register prisma/seed.ts"

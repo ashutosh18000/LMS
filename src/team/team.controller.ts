@@ -3,8 +3,11 @@ import { Role } from '@prisma/client';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { MinRole } from '../common/decorators/min-role.decorator';
 import { DateRangeDto, validateDateRange } from '../common/dto/date-range.dto';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TeamService } from './team.service';
 
+@ApiTags('Team Availability')
+@ApiBearerAuth('JWT-auth')
 @Controller('team')
 @MinRole(Role.manager)
 export class TeamController {
