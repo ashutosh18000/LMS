@@ -15,7 +15,7 @@ dotenv.config();
 // Ensure test database connection is used if configured
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Authentication & Authorization E2E', () => {
@@ -45,7 +45,6 @@ describe('Authentication & Authorization E2E', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
     await app.close();
   });
 

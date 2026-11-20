@@ -13,7 +13,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('HR Setup Modules E2E (Users, Schedules, LeaveTypes, Holidays)', () => {
@@ -42,7 +42,6 @@ describe('HR Setup Modules E2E (Users, Schedules, LeaveTypes, Holidays)', () => 
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
     await app.close();
   });
 

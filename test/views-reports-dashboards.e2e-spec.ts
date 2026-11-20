@@ -15,7 +15,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
@@ -47,7 +47,6 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
 
   afterAll(async () => {
     clockService.setFixedToday(null);
-    await prisma.$disconnect();
     await app.close();
   });
 

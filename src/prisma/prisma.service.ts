@@ -29,6 +29,31 @@ export class PrismaService
     });
   }
 
+  // Overload 1: Interactive callback form
+  override $transaction<R>(
+    fn: (prisma: Omit<this, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>) => Promise<R>,
+    options?: { maxWait?: number; timeout?: number; isolationLevel?: any },
+  ): Promise<R>;
+  // Overload 2: Sequential array form
+  override $transaction<P extends any[]>(
+    arg: [...P],
+    options?: { isolationLevel?: any },
+  ): Promise<any>;
+  // Implementation
+  override $transaction(arg: any, options?: any): Promise<any> {
+    if (typeof arg === 'function') {
+      const defaultMaxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '5000', 10);
+      const defaultTimeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '10000', 10);
+      const mergedOptions = {
+        maxWait: options?.maxWait ?? defaultMaxWait,
+        timeout: options?.timeout ?? defaultTimeout,
+        ...options,
+      };
+      return super.$transaction(arg, mergedOptions);
+    }
+    return super.$transaction(arg, options);
+  }
+
   async onModuleInit(): Promise<void> {
     await this.connectWithRetry();
   }

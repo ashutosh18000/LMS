@@ -5,6 +5,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
+import { LoginAttemptService } from './login-attempt.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -13,7 +14,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     JwtModule.register({}),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, TokensService, JwtStrategy],
-  exports: [AuthService, PasswordService, TokensService, PassportModule, JwtModule],
+  providers: [AuthService, PasswordService, TokensService, LoginAttemptService, JwtStrategy],
+  exports: [AuthService, PasswordService, TokensService, LoginAttemptService, PassportModule, JwtModule],
 })
 export class AuthModule {}

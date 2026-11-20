@@ -12,7 +12,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Platform (Root) & Org (Owner) Modules E2E', () => {
@@ -41,7 +41,6 @@ describe('Platform (Root) & Org (Owner) Modules E2E', () => {
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
     await app.close();
   });
 

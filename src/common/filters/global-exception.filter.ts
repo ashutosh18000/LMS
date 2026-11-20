@@ -125,11 +125,25 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       );
     }
 
+    if (statusCode === HttpStatus.TOO_MANY_REQUESTS) {
+      if (!response.getHeader('Retry-After') && !response.getHeader('retry-after')) {
+        const rawHeaders = (response.getHeaders ? response.getHeaders() : {}) as Record<string, any>;
+        let retryVal = '60';
+        for (const [k, v] of Object.entries(rawHeaders)) {
+          if (k.toLowerCase().startsWith('retry-after')) {
+            retryVal = String(v);
+            break;
+          }
+        }
+        response.setHeader('Retry-After', retryVal);
+      }
+    }
+
     const payload: ErrorResponsePayload = {
       statusCode,
       code,
       message,
-      ...(details !== null && details !== undefined && { details }),
+      details: details !== undefined ? details : null,
     };
 
     if (!response.headersSent) {

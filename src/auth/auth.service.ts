@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PasswordService } from './password.service';
 import { TokensService } from './tokens.service';
 import { AuditService } from '../audit/audit.service';
+import { LoginAttemptService } from './login-attempt.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
@@ -19,6 +22,7 @@ export class AuthService {
     private readonly passwordService: PasswordService,
     private readonly tokensService: TokensService,
     private readonly auditService: AuditService,
+    private readonly loginAttemptService: LoginAttemptService,
   ) {}
 
   /**
@@ -29,6 +33,20 @@ export class AuthService {
   async login(dto: LoginDto, res: Response) {
     const email = dto.email.toLowerCase().trim();
 
+    const { blocked, retryAfterSeconds } = this.loginAttemptService.isBlocked(email);
+    if (blocked) {
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          code: 'TOO_MANY_REQUESTS',
+          message: 'Too many failed login attempts. Please try again later.',
+          details: null,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -37,6 +55,7 @@ export class AuthService {
     });
 
     if (!user) {
+      this.loginAttemptService.recordFailedAttempt(email);
       // Execute dummy comparison to mitigate timing attacks revealing user existence
       await this.passwordService.dummyCompare(dto.password);
       throw new UnauthorizedException('Invalid credentials');
@@ -48,8 +67,11 @@ export class AuthService {
     );
 
     if (!isPasswordValid) {
+      this.loginAttemptService.recordFailedAttempt(email);
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    this.loginAttemptService.resetAttempts(email);
 
     if (!user.active) {
       throw new UnauthorizedException('Account is inactive');

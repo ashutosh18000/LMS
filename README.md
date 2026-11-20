@@ -89,20 +89,23 @@ The LMS platform enables organizations to administer leave policies, work schedu
 
 ## 🍪 Cross-Domain Frontend Cookie Configuration Guide
 
-When the frontend and backend are hosted on separate domains or subdomains (e.g., frontend on `https://app.company.com` and backend on `https://api.company.com` or `https://company-api.onrender.com`):
+When the frontend and backend are hosted across web origins:
 
-1. **Shared Root Domain (e.g., `app.company.com` and `api.company.com`)**:
-   - Set `COOKIE_SAMESITE=lax` (or `strict`)
+1. **Recommended & Safest Architecture: Shared Parent Domain (e.g., `app.company.com` and `api.company.com`)**:
+   - **Why this is the safest**: Placing both frontend and backend under the same parent domain (e.g. `company.com`) eliminates cross-site third-party cookie restrictions entirely.
+   - Set `COOKIE_SAMESITE=lax`
    - Set `COOKIE_DOMAIN=.company.com`
    - Set `CORS_ORIGINS=https://app.company.com`
    - In frontend fetch / axios, set `credentials: 'include'` (or `withCredentials: true`).
 
-2. **Completely Distinct Domains (e.g., `https://my-lms.vercel.app` and `https://lms-api.render.com`)**:
-   - Set `COOKIE_SAMESITE=none` (the backend automatically enforces `secure: true` when sameSite is `none`).
-   - Leave `COOKIE_DOMAIN` unset.
-   - Set `CORS_ORIGINS=https://my-lms.vercel.app`
-   - **Crucial**: Modern browsers reject `sameSite=none` cookies over plain HTTP. HTTPS is strictly required on both frontend and backend.
-   - In frontend fetch / axios, set `credentials: 'include'` (or `withCredentials: true`).
+2. **Cross-Site Distinct Domains (e.g., `https://my-lms.vercel.app` and `https://lms-api.render.com`)**:
+   - Use `COOKIE_SAMESITE=none` **only** when frontend and backend reside on completely separate registrable domains.
+   - **Crucial Browser Notice**: Modern privacy engines (such as Apple Safari's Intelligent Tracking Prevention - ITP, and Brave/Firefox privacy protections) block third-party cross-site cookies by default. Users on Safari may experience refresh token rejection unless third-party cookies are allowed or custom domain routing is configured.
+   - When `COOKIE_SAMESITE=none` is used:
+     - `secure: true` is strictly enforced (plain HTTP is rejected by browsers).
+     - Leave `COOKIE_DOMAIN` unset.
+     - Set `CORS_ORIGINS=https://my-lms.vercel.app`
+     - In frontend fetch / axios, set `credentials: 'include'` (or `withCredentials: true`).
 
 ---
 

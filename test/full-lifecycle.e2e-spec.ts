@@ -13,7 +13,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Full Enterprise Lifecycle E2E Test', () => {
@@ -45,7 +45,6 @@ describe('Full Enterprise Lifecycle E2E Test', () => {
 
   afterAll(async () => {
     clockService.setFixedToday(null);
-    await prisma.$disconnect();
     await app.close();
   });
 

@@ -22,7 +22,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Team Availability with Day Types & Schedule Resolution E2E', () => {
@@ -54,7 +54,6 @@ describe('Team Availability with Day Types & Schedule Resolution E2E', () => {
 
   afterAll(async () => {
     clockService.setFixedToday(null);
-    await prisma.$disconnect();
     await app.close();
   });
 

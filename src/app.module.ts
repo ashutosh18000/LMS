@@ -43,9 +43,19 @@ import { RolesGuard } from './common/guards/roles.guard';
         limit: 100,
       },
       {
-        name: 'auth',
+        name: 'login',
+        ttl: 60000,
+        limit: 10,
+      },
+      {
+        name: 'changePassword',
         ttl: 60000,
         limit: 5,
+      },
+      {
+        name: 'auth',
+        ttl: 60000,
+        limit: 10,
       },
       {
         name: 'refresh',

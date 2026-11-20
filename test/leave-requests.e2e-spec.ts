@@ -15,7 +15,7 @@ dotenv.config();
 
 if (process.env.TEST_DATABASE_URL) {
   process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-  process.env.DIRECT_URL = process.env.TEST_DATABASE_URL;
+  process.env.DIRECT_URL = process.env.TEST_DIRECT_URL;
 }
 
 describe('Leave Requests Module E2E', () => {
@@ -49,7 +49,6 @@ describe('Leave Requests Module E2E', () => {
 
   afterAll(async () => {
     clockService.setFixedToday(null);
-    await prisma.$disconnect();
     await app.close();
   });
 
