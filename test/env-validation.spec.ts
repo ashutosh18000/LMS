@@ -129,6 +129,16 @@ describe('Environment Validation (Unit Tests)', () => {
         'COOKIE_SECURE must be true when COOKIE_SAMESITE is none in production',
       );
     });
+
+    it('fails in production when THROTTLE_DISABLED is "true"', () => {
+      const throttledDisabledConfig = {
+        ...validProdConfig,
+        THROTTLE_DISABLED: 'true',
+      };
+      expect(() => validateEnv(throttledDisabledConfig)).toThrow(
+        'THROTTLE_DISABLED cannot be "true" in production',
+      );
+    });
   });
 
   describe('4. Startup Warnings (DATABASE_URL pooler & COOKIE_SAMESITE=none)', () => {

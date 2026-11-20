@@ -143,6 +143,15 @@ export const envSchema = z
         }
       }
 
+      // THROTTLE_DISABLED cannot be true in production
+      if (data.THROTTLE_DISABLED === 'true' || (data.THROTTLE_DISABLED as any) === true) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'THROTTLE_DISABLED cannot be "true" in production',
+          path: ['THROTTLE_DISABLED'],
+        });
+      }
+
       // COOKIE_SAMESITE=none requires secure cookie in production
       if (data.COOKIE_SAMESITE === 'none') {
         if (data.COOKIE_SECURE === false) {
