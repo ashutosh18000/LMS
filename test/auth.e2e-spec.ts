@@ -1,3 +1,4 @@
+import * as path from "path";
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
@@ -10,7 +11,7 @@ import { PasswordService } from '../src/auth/password.service';
 import { DummyProtectedController } from './dummy-protected.controller';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 
 // Ensure test database connection is used if configured
 if (process.env.TEST_DATABASE_URL) {

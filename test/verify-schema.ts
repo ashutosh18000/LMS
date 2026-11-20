@@ -1,8 +1,9 @@
+import * as path from "path";
 import { PrismaClient, Role, OrgStatus } from '@prisma/client';
 import * as dotenv from 'dotenv';
 import './e2e-env-guard';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 
 const prisma = new PrismaClient();
 
