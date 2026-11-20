@@ -727,6 +727,8 @@ export class LeaveRequestsService {
       throw new ForbiddenException('Owner leave apply nahi karta');
     }
 
+    const txTimeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '30000', 10);
+    const txMaxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '10000', 10);
     return this.prisma.$transaction(
       async (tx) => {
         return this.createRequest(tx, {
@@ -737,7 +739,7 @@ export class LeaveRequestsService {
           segments: dto.segments,
         });
       },
-      { timeout: 15000 },
+      { timeout: txTimeout, maxWait: txMaxWait },
     );
   }
 
@@ -1088,6 +1090,8 @@ export class LeaveRequestsService {
 
     const autoApprove = dto.autoApprove ?? true;
 
+    const txTimeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '30000', 10);
+    const txMaxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '10000', 10);
     const result = await this.prisma.$transaction(
       async (tx) => {
         return this.createRequest(tx, {
@@ -1102,7 +1106,7 @@ export class LeaveRequestsService {
           decisionComment: dto.onBehalfReason,
         });
       },
-      { timeout: 15000 },
+      { timeout: txTimeout, maxWait: txMaxWait },
     );
 
     await this.auditService.log({
