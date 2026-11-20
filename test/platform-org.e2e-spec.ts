@@ -7,6 +7,7 @@ import { OrgStatus, Role } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
+import { cleanTestDatabase } from './test-helpers';
 
 dotenv.config();
 
@@ -46,20 +47,7 @@ describe('Platform (Root) & Org (Owner) Modules E2E', () => {
 
   // Strict cleanup before each test
   beforeEach(async () => {
-    await prisma.auditLog.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.leaveSegmentDay.deleteMany();
-    await prisma.leaveSegment.deleteMany();
-    await prisma.leaveRequest.deleteMany();
-    await prisma.balanceAdjustment.deleteMany();
-    await prisma.leaveBalance.deleteMany();
-    await prisma.carryForwardRun.deleteMany();
-    await prisma.employeeSchedule.deleteMany();
-    await prisma.workScheduleTemplate.deleteMany();
-    await prisma.leaveType.deleteMany();
-    await prisma.holiday.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.organization.deleteMany();
+    await cleanTestDatabase(prisma);
   });
 
   // Helper to create root user and return access token

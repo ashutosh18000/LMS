@@ -8,6 +8,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
 import { ClockService } from '../src/common/services/clock.service';
 import { Role } from '@prisma/client';
+import { cleanTestDatabase } from './test-helpers';
 
 dotenv.config();
 
@@ -50,20 +51,7 @@ describe('Full Enterprise Lifecycle E2E Test', () => {
 
   beforeAll(async () => {
     // Database cleanup prior to running the end-to-end lifecycle
-    await prisma.auditLog.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.leaveSegmentDay.deleteMany();
-    await prisma.leaveSegment.deleteMany();
-    await prisma.leaveRequest.deleteMany();
-    await prisma.balanceAdjustment.deleteMany();
-    await prisma.leaveBalance.deleteMany();
-    await prisma.carryForwardRun.deleteMany();
-    await prisma.employeeSchedule.deleteMany();
-    await prisma.workScheduleTemplate.deleteMany();
-    await prisma.leaveType.deleteMany();
-    await prisma.holiday.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.organization.deleteMany();
+    await cleanTestDatabase(prisma);
   });
 
   it('executes complete production lifecycle from platform bootstrap to suspension', async () => {
