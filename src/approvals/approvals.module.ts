@@ -3,9 +3,10 @@ import { ApprovalsController } from './approvals.controller';
 import { ApprovalsService } from './approvals.service';
 import { BalancesModule } from '../balances/balances.module';
 import { LeaveRequestsModule } from '../leave-requests/leave-requests.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [BalancesModule, LeaveRequestsModule],
+  imports: [BalancesModule, LeaveRequestsModule, NotificationsModule],
   controllers: [ApprovalsController],
   providers: [ApprovalsService],
   exports: [ApprovalsService],

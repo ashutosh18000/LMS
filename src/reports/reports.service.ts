@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma, RequestStatus, SkipReason } from '@prisma/client';
+import { Prisma, RequestStatus, SegmentStatus, SkipReason } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClockService } from '../common/services/clock.service';
 import { LeaveYearService } from '../balances/leave-year.service';
@@ -33,10 +33,15 @@ export class ReportsService {
     const toDate = DateUtil.parse(query.to);
 
     const statusCondition = query.includePending
-      ? { in: [RequestStatus.approved, RequestStatus.pending] }
-      : RequestStatus.approved;
+      ? { in: [RequestStatus.approved, RequestStatus.pending, RequestStatus.partially_approved] }
+      : { in: [RequestStatus.approved, RequestStatus.partially_approved] };
+
+    const segmentStatusCondition = query.includePending
+      ? { in: [SegmentStatus.approved, SegmentStatus.pending] }
+      : SegmentStatus.approved;
 
     const where: Prisma.LeaveSegmentWhereInput = {
+      status: segmentStatusCondition,
       request: {
         orgId: callerOrgId,
         status: statusCondition,
@@ -175,8 +180,10 @@ export class ReportsService {
       where: {
         orgId: callerOrgId,
         date: targetDate,
+        occupancy: { gt: 0 },
         skipReason: SkipReason.none,
-        request: { status: RequestStatus.approved },
+        segment: { status: SegmentStatus.approved },
+        request: { status: { in: [RequestStatus.approved, RequestStatus.partially_approved] } },
       },
       include: {
         user: { select: { id: true, name: true, department: true } },
@@ -401,8 +408,10 @@ export class ReportsService {
       where: {
         orgId: callerOrgId,
         date: { gte: fromDate, lte: toDate },
+        occupancy: { gt: 0 },
         skipReason: SkipReason.none,
-        request: { status: RequestStatus.approved },
+        segment: { status: SegmentStatus.approved },
+        request: { status: { in: [RequestStatus.approved, RequestStatus.partially_approved] } },
       },
       include: {
         user: { select: { id: true, name: true, department: true } },

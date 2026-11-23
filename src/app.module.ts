@@ -23,6 +23,7 @@ import { OrgModule } from './org/org.module';
 import { TeamModule } from './team/team.module';
 import { ReportsModule } from './reports/reports.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { MustChangePasswordGuard } from './common/guards/must-change-password.guard';
@@ -87,6 +88,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     TeamModule,
     ReportsModule,
     DashboardModule,
+    NotificationsModule,
   ],
   providers: [
     // Guard execution order:

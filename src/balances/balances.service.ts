@@ -527,9 +527,14 @@ export class BalancesService {
           gte: startOfMonth,
           lte: endOfMonth,
         },
+        occupancy: { gt: 0 },
         request: {
           status: {
-            in: [RequestStatus.pending, RequestStatus.approved],
+            in: [
+              RequestStatus.pending,
+              RequestStatus.approved,
+              RequestStatus.partially_approved,
+            ],
           },
         },
       },

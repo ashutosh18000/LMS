@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { RequestStatus, Role, SkipReason } from '@prisma/client';
+import { RequestStatus, Role, SegmentStatus, SkipReason } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ClockService } from '../common/services/clock.service';
 import { LeaveYearService } from '../balances/leave-year.service';
@@ -121,9 +121,14 @@ export class DashboardService {
               orgId: caller.orgId,
               leaveTypeId: b.leaveTypeId,
               date: { gte: startOfMonth, lte: endOfMonth },
+              occupancy: { gt: 0 },
               request: {
                 status: {
-                  in: [RequestStatus.pending, RequestStatus.approved],
+                  in: [
+                    RequestStatus.pending,
+                    RequestStatus.approved,
+                    RequestStatus.partially_approved,
+                  ],
                 },
               },
             },
@@ -159,9 +164,10 @@ export class DashboardService {
         userId: caller.id,
         startDate: { lte: DateUtil.parse(next30Str) },
         endDate: { gte: DateUtil.parse(today) },
+        status: SegmentStatus.approved,
         request: {
           orgId: caller.orgId,
-          status: RequestStatus.approved,
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
         },
       },
       include: {
@@ -281,9 +287,10 @@ export class DashboardService {
         userId: { in: directReportIds },
         startDate: { lte: DateUtil.parse(next7Str) },
         endDate: { gte: DateUtil.parse(today) },
+        status: SegmentStatus.approved,
         request: {
           orgId: caller.orgId,
-          status: RequestStatus.approved,
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
         },
       },
       include: {
@@ -374,7 +381,11 @@ export class DashboardService {
         orgId: caller.orgId,
         date: DateUtil.parse(today),
         skipReason: SkipReason.none,
-        request: { status: RequestStatus.approved },
+        occupancy: { gt: 0 },
+        segment: { status: SegmentStatus.approved },
+        request: {
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
+        },
         user: { active: true },
       },
       select: {
@@ -419,7 +430,11 @@ export class DashboardService {
         orgId: caller.orgId,
         date: { gte: startOfMonth, lte: endOfMonth },
         skipReason: SkipReason.none,
-        request: { status: RequestStatus.approved },
+        occupancy: { gt: 0 },
+        segment: { status: SegmentStatus.approved },
+        request: {
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
+        },
       },
       include: {
         leaveType: { select: { name: true } },
@@ -472,6 +487,7 @@ export class DashboardService {
       approved: 0,
       rejected: 0,
       cancelled: 0,
+      partially_approved: 0,
     };
     for (const sc of statusCounts) {
       if (sc.status in requestsLast30Days) {

@@ -5,18 +5,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RequestStatus, Role } from '@prisma/client';
+import { Prisma, RequestStatus, Role, SegmentStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { BalancesService } from '../balances/balances.service';
 import { LeaveYearService } from '../balances/leave-year.service';
 import { LeaveRequestsService } from '../leave-requests/leave-requests.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import {
+  DecidedSegmentNotificationItem,
+  NotificationsService,
+} from '../notifications/notifications.service';
 import { DateUtil } from '../common/utils/date.util';
 import { canDecide } from '../common/utils/decision-permission.util';
 import { PaginatedResult } from '../common/dto/pagination.dto';
 import { QueryPendingApprovalsDto } from './dto/query-pending-approvals.dto';
 import { ApproveRequestDto } from './dto/approve-request.dto';
 import { RejectRequestDto } from './dto/reject-request.dto';
+import { DecideRequestDto } from './dto/decide-request.dto';
+import { DecideResponseDto } from './dto/decide-response.dto';
 
 @Injectable()
 export class ApprovalsService {
@@ -26,6 +32,7 @@ export class ApprovalsService {
     private readonly leaveYearService: LeaveYearService,
     private readonly leaveRequestsService: LeaveRequestsService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -139,6 +146,9 @@ export class ApprovalsService {
         endDate: DateUtil.format(s.endDate),
         portion: s.portion,
         countedDays: s.countedDays,
+        status: s.status,
+        decidedAt: s.decidedAt,
+        decisionComment: s.decisionComment,
       })),
       reason: r.reason,
       spanDays: r.spanDays,
@@ -157,7 +167,7 @@ export class ApprovalsService {
 
   /**
    * 2. GET /approvals/:id (@MinRole(Role.HR_ADMIN))
-   * Returns complete request details and decision context (balances, monthlyUsage, teamConflicts).
+   * Complete detail of pending request with balances, monthlyUsage, and teamConflicts context.
    */
   async getApprovalById(
     callerId: string,
@@ -166,9 +176,8 @@ export class ApprovalsService {
     id: string,
   ) {
     const request = await this.prisma.leaveRequest.findFirst({
-      where: { id, orgId, status: RequestStatus.pending },
+      where: { id, orgId },
       include: {
-        organization: { select: { financialYearStartMonth: true } },
         user: {
           select: {
             id: true,
@@ -177,20 +186,18 @@ export class ApprovalsService {
             role: true,
             department: true,
             managerId: true,
-            orgId: true,
           },
         },
-        creator: {
-          select: { id: true, name: true, role: true },
-        },
+        creator: { select: { id: true, name: true, role: true } },
+        organization: { select: { financialYearStartMonth: true } },
         segments: {
           include: {
             leaveType: {
               select: {
                 id: true,
                 name: true,
-                isWfh: true,
                 deductsBalance: true,
+                isWfh: true,
                 monthlyLimit: true,
               },
             },
@@ -204,25 +211,24 @@ export class ApprovalsService {
     });
 
     if (!request) {
-      throw new NotFoundException('Pending approval request not found');
+      throw new NotFoundException('Leave request not found');
     }
 
-    // Authorization: caller must be able to decide this requester's request
+    // Permission rule check
     if (!canDecide({ id: callerId, role: callerRole, orgId }, request.user)) {
-      throw new NotFoundException('Pending approval request not found');
+      throw new NotFoundException('Leave request not found');
     }
 
-    const startMonth = request.organization?.financialYearStartMonth ?? 4;
-
-    // A. Balances for all deductsBalance leave types involved in this request
+    // Context aggregation
+    // A. Balances for leave types involved in this request
     const balances: Array<{
       leaveTypeId: string;
       leaveTypeName: string;
       year: number;
-      allocated: any;
-      used: any;
-      pending: any;
-      available: any;
+      allocated: Prisma.Decimal;
+      used: Prisma.Decimal;
+      pending: Prisma.Decimal;
+      available: Prisma.Decimal;
     }> = [];
 
     const balanceKeys = new Set<string>();
@@ -230,10 +236,11 @@ export class ApprovalsService {
       if (seg.leaveType.deductsBalance) {
         for (const day of request.segmentDays) {
           if (day.leaveTypeId === seg.leaveTypeId && Number(day.countedWeight) > 0) {
-            const dateStr = DateUtil.format(day.date);
-            const year = this.leaveYearService.leaveYearOf(dateStr, startMonth);
-            const key = `${seg.leaveTypeId}_${year}`;
-            balanceKeys.add(key);
+            const leaveYear = this.leaveYearService.leaveYearOf(
+              day.date,
+              request.organization.financialYearStartMonth,
+            );
+            balanceKeys.add(`${seg.leaveTypeId}_${leaveYear}`);
           }
         }
       }
@@ -305,8 +312,9 @@ export class ApprovalsService {
           leaveTypeId: typeId,
           date: { gte: startOfMonth, lte: endOfMonth },
           request: {
-            status: { in: [RequestStatus.pending, RequestStatus.approved] },
+            status: { in: [RequestStatus.pending, RequestStatus.approved, RequestStatus.partially_approved] },
           },
+          occupancy: { gt: 0 },
         },
         _sum: { countedWeight: true },
       });
@@ -328,7 +336,6 @@ export class ApprovalsService {
     // C. Team conflicts: others on leave/WFH on the same dates
     let teamUserIds: string[] = [];
     if (request.user.managerId) {
-      // Same managerId plus the manager themselves
       const teamUsers = await this.prisma.user.findMany({
         where: {
           orgId,
@@ -342,7 +349,6 @@ export class ApprovalsService {
       });
       teamUserIds = teamUsers.map((u) => u.id).filter((id) => id !== request.user.id);
     } else if (request.user.department) {
-      // Same department
       const teamUsers = await this.prisma.user.findMany({
         where: {
           orgId,
@@ -377,7 +383,7 @@ export class ApprovalsService {
           date: { in: occupiedDates },
           occupancy: { gt: 0 },
           request: {
-            status: { in: [RequestStatus.pending, RequestStatus.approved] },
+            status: { in: [RequestStatus.pending, RequestStatus.approved, RequestStatus.partially_approved] },
           },
         },
         include: {
@@ -424,6 +430,9 @@ export class ApprovalsService {
         endDate: DateUtil.format(s.endDate),
         portion: s.portion,
         countedDays: s.countedDays,
+        status: s.status,
+        decidedAt: s.decidedAt,
+        decisionComment: s.decisionComment,
       })),
       segmentDays: request.segmentDays.map((d) => ({
         id: d.id,
@@ -442,24 +451,27 @@ export class ApprovalsService {
   }
 
   /**
-   * 3. POST /approvals/:id/approve (@MinRole(Role.HR_ADMIN))
-   * Approves a pending request, commits reserved balances to used, and logs audit.
+   * 3. POST /approvals/:id/decide (@MinRole(Role.HR_ADMIN))
+   * Submits atomic segment-wise decisions for ALL pending segments of a request.
    */
-  async approveRequest(
+  async decideRequest(
     callerId: string,
     callerRole: Role,
     orgId: string,
     id: string,
-    dto: ApproveRequestDto,
-  ) {
+    dto: DecideRequestDto,
+  ): Promise<DecideResponseDto> {
     const request = await this.prisma.leaveRequest.findFirst({
       where: { id, orgId },
       include: {
-        user: { select: { id: true, role: true, orgId: true } },
+        user: { select: { id: true, name: true, role: true, orgId: true, managerId: true } },
         organization: { select: { financialYearStartMonth: true } },
-        segmentDays: {
+        segments: {
           include: {
-            leaveType: { select: { deductsBalance: true } },
+            leaveType: { select: { id: true, name: true, deductsBalance: true, isWfh: true } },
+            segmentDays: {
+              select: { id: true, date: true, countedWeight: true, occupancy: true },
+            },
           },
         },
       },
@@ -472,6 +484,239 @@ export class ApprovalsService {
     // Permission rule check
     if (!canDecide({ id: callerId, role: callerRole, orgId }, request.user)) {
       throw new ForbiddenException('Aap is request par decision nahi le sakte');
+    }
+
+    if (request.status !== RequestStatus.pending) {
+      throw new ConflictException(
+        `Sirf pending request par decision liya ja sakta hai. Current status: ${request.status}`,
+      );
+    }
+
+    const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);
+    if (pendingSegments.length === 0) {
+      throw new ConflictException('Is request mein koi pending segment nahi hai');
+    }
+
+    // Validate that every pending segment has an entry in dto.decisions
+    const decisionMap = new Map<string, { segmentId: string; action: 'approve' | 'reject'; comment?: string }>();
+    for (const d of dto.decisions) {
+      decisionMap.set(d.segmentId, d);
+    }
+
+    const missingSegments: string[] = [];
+    for (const seg of pendingSegments) {
+      if (!decisionMap.has(seg.id)) {
+        missingSegments.push(seg.id);
+      }
+    }
+
+    if (missingSegments.length > 0) {
+      throw new BadRequestException(
+        `Har pending segment ke liye decision dena zaroori hai. Missing segment(s): ${missingSegments.join(', ')}`,
+      );
+    }
+
+    // Validate no extraneous segment IDs
+    const pendingSegmentIds = new Set(pendingSegments.map((s) => s.id));
+    for (const d of dto.decisions) {
+      if (!pendingSegmentIds.has(d.segmentId)) {
+        throw new BadRequestException(`Invalid or non-pending segment ID: ${d.segmentId}`);
+      }
+    }
+
+    // Validate reject comment is mandatory
+    for (const d of dto.decisions) {
+      if (d.action === 'reject') {
+        if (!d.comment || !d.comment.trim()) {
+          throw new BadRequestException('Reject karne wale har segment ke liye comment zaroori hai');
+        }
+      }
+    }
+
+    // Derive request status based on segment decisions
+    let allApproved = true;
+    let allRejected = true;
+    for (const seg of pendingSegments) {
+      const decision = decisionMap.get(seg.id)!;
+      if (decision.action === 'approve') {
+        allRejected = false;
+      } else {
+        allApproved = false;
+      }
+    }
+
+    let derivedStatus: RequestStatus;
+    if (allApproved) {
+      derivedStatus = RequestStatus.approved;
+    } else if (allRejected) {
+      derivedStatus = RequestStatus.rejected;
+    } else {
+      derivedStatus = RequestStatus.partially_approved;
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1. Transaction-level advisory lock on requester ID
+      await tx.$executeRaw(
+        Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
+      );
+
+      // 2. Conditional status update on LeaveRequest: WHERE status = 'pending'
+      const lastComment = dto.decisions.find((d) => d.comment?.trim())?.comment?.trim() ?? null;
+      const now = new Date();
+
+      const updateRes = await tx.leaveRequest.updateMany({
+        where: { id, orgId, status: RequestStatus.pending },
+        data: {
+          status: derivedStatus,
+          decidedBy: callerId,
+          decidedAt: now,
+          decisionComment: lastComment,
+        },
+      });
+
+      if (updateRes.count === 0) {
+        throw new ConflictException('Request was updated concurrently or is no longer pending');
+      }
+
+      const decidedSegmentsResponse: Array<{ id: string; status: SegmentStatus; comment?: string | null }> = [];
+      const notificationSegments: DecidedSegmentNotificationItem[] = [];
+
+      // 3. For each segment, update status conditionally and commit/release balances
+      for (const seg of pendingSegments) {
+        const decision = decisionMap.get(seg.id)!;
+        const newSegmentStatus =
+          decision.action === 'approve' ? SegmentStatus.approved : SegmentStatus.rejected;
+        const segmentComment = decision.comment ? decision.comment.trim() : null;
+
+        const segUpdateRes = await tx.leaveSegment.updateMany({
+          where: { id: seg.id, requestId: id, status: SegmentStatus.pending },
+          data: {
+            status: newSegmentStatus,
+            decidedBy: callerId,
+            decidedAt: now,
+            decisionComment: segmentComment,
+          },
+        });
+
+        if (segUpdateRes.count === 0) {
+          throw new ConflictException(
+            `Segment ${seg.id} was updated concurrently or is no longer pending`,
+          );
+        }
+
+        // If rejected, set occupancy = 0 so dates are freed up immediately
+        if (decision.action === 'reject') {
+          await tx.leaveSegmentDay.updateMany({
+            where: { segmentId: seg.id },
+            data: { occupancy: 0 },
+          });
+        }
+
+        // Balance handling: only if leave type deductsBalance is true
+        if (seg.leaveType.deductsBalance) {
+          const segmentBalances = this.leaveRequestsService.calculateBalanceAmountsFromDays(
+            request.organization?.financialYearStartMonth ?? 4,
+            seg.segmentDays.map((d) => ({
+              leaveTypeId: seg.leaveTypeId,
+              date: d.date,
+              countedWeight: d.countedWeight,
+              leaveType: { deductsBalance: true },
+            })),
+          );
+
+          for (const b of segmentBalances) {
+            if (decision.action === 'approve') {
+              await this.balancesService.commit(tx, request.userId, b.leaveTypeId, b.year, b.amount);
+            } else {
+              await this.balancesService.release(tx, request.userId, b.leaveTypeId, b.year, b.amount);
+            }
+          }
+        }
+
+        // Audit log per segment decision
+        await this.auditService.log(
+          {
+            orgId,
+            actorId: callerId,
+            targetUserId: request.userId,
+            action:
+              decision.action === 'approve'
+                ? AuditAction.LEAVE_APPROVED
+                : AuditAction.LEAVE_REJECTED,
+            reason: segmentComment,
+            metadata: {
+              requestId: id,
+              segmentId: seg.id,
+              action: decision.action,
+              comment: segmentComment,
+              leaveTypeId: seg.leaveTypeId,
+              countedDays: seg.countedDays ? seg.countedDays.toString() : '0',
+            },
+          },
+          tx,
+        );
+
+        decidedSegmentsResponse.push({
+          id: seg.id,
+          status: newSegmentStatus,
+          comment: segmentComment,
+        });
+
+        notificationSegments.push({
+          id: seg.id,
+          isWfh: seg.leaveType.isWfh,
+          startDate: seg.startDate,
+          endDate: seg.endDate,
+          portion: seg.portion,
+          status: newSegmentStatus,
+          comment: segmentComment,
+        });
+      }
+
+      // 4. Create in-app notifications
+      await this.notificationsService.createDecisionNotifications(tx, {
+        orgId,
+        requestId: id,
+        requestStatus: derivedStatus,
+        requester: {
+          id: request.user.id,
+          name: request.user.name,
+          managerId: request.user.managerId,
+        },
+        segments: notificationSegments,
+      });
+
+      return {
+        message: 'Leave request decided successfully',
+        id,
+        status: derivedStatus,
+        segments: decidedSegmentsResponse,
+      };
+    });
+
+    return result;
+  }
+
+  /**
+   * 4. POST /approvals/:id/approve (@MinRole(Role.HR_ADMIN))
+   * Shortcut to approve all pending segments.
+   */
+  async approveRequest(
+    callerId: string,
+    callerRole: Role,
+    orgId: string,
+    id: string,
+    dto: ApproveRequestDto,
+  ): Promise<DecideResponseDto> {
+    const request = await this.prisma.leaveRequest.findFirst({
+      where: { id, orgId },
+      include: {
+        segments: true,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Leave request not found');
     }
 
     if (request.status !== RequestStatus.pending) {
@@ -480,62 +725,23 @@ export class ApprovalsService {
       );
     }
 
-    const balances = this.leaveRequestsService.calculateBalanceAmountsFromDays(
-      request.organization?.financialYearStartMonth ?? 4,
-      request.segmentDays,
-    );
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
-        );
+    const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);
+    const decisions = pendingSegments.map((s) => ({
+      segmentId: s.id,
+      action: 'approve' as const,
+      comment: dto.comment,
+    }));
 
-        // Update status to approved atomically
-        const updateRes = await tx.leaveRequest.updateMany({
-          where: { id, orgId, status: RequestStatus.pending },
-          data: {
-            status: RequestStatus.approved,
-            decidedBy: callerId,
-            decidedAt: new Date(),
-            decisionComment: dto.comment ?? null,
-          },
-        });
-
-        if (updateRes.count === 0) {
-          throw new ConflictException('Request was updated concurrently or is no longer pending');
-        }
-
-        for (const b of balances) {
-          await this.balancesService.commit(tx, request.userId, b.leaveTypeId, b.year, b.amount);
-        }
-
-        await this.auditService.log({
-          orgId,
-          actorId: callerId,
-          targetUserId: request.userId,
-          action: AuditAction.LEAVE_APPROVED,
-          reason: dto.comment ?? null,
-          metadata: {
-            requestId: id,
-            requesterId: request.userId,
-            countedDays: request.countedDays ? request.countedDays.toString() : '0',
-            comment: dto.comment ?? null,
-          },
-        }, tx);
-
-        return {
-          message: 'Leave request approved successfully',
-          id,
-          status: RequestStatus.approved,
-        };
-      },
-    );
-    return result;
+    const result = await this.decideRequest(callerId, callerRole, orgId, id, { decisions });
+    return {
+      ...result,
+      message: 'Leave request approved successfully',
+    };
   }
 
   /**
-   * 4. POST /approvals/:id/reject (@MinRole(Role.HR_ADMIN))
-   * Rejects a pending request, releases reserved balances, and logs audit.
+   * 5. POST /approvals/:id/reject (@MinRole(Role.HR_ADMIN))
+   * Shortcut to reject all pending segments (comment required).
    */
   async rejectRequest(
     callerId: string,
@@ -543,27 +749,16 @@ export class ApprovalsService {
     orgId: string,
     id: string,
     dto: RejectRequestDto,
-  ) {
+  ): Promise<DecideResponseDto> {
     const request = await this.prisma.leaveRequest.findFirst({
       where: { id, orgId },
       include: {
-        user: { select: { id: true, role: true, orgId: true } },
-        organization: { select: { financialYearStartMonth: true } },
-        segmentDays: {
-          include: {
-            leaveType: { select: { deductsBalance: true } },
-          },
-        },
+        segments: true,
       },
     });
 
     if (!request) {
       throw new NotFoundException('Leave request not found');
-    }
-
-    // Permission rule check
-    if (!canDecide({ id: callerId, role: callerRole, orgId }, request.user)) {
-      throw new ForbiddenException('Aap is request par decision nahi le sakte');
     }
 
     if (request.status !== RequestStatus.pending) {
@@ -572,56 +767,17 @@ export class ApprovalsService {
       );
     }
 
-    const balances = this.leaveRequestsService.calculateBalanceAmountsFromDays(
-      request.organization?.financialYearStartMonth ?? 4,
-      request.segmentDays,
-    );
-    const result = await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRaw(
-          Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
-        );
+    const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);
+    const decisions = pendingSegments.map((s) => ({
+      segmentId: s.id,
+      action: 'reject' as const,
+      comment: dto.comment,
+    }));
 
-        // Update status to rejected atomically
-        const updateRes = await tx.leaveRequest.updateMany({
-          where: { id, orgId, status: RequestStatus.pending },
-          data: {
-            status: RequestStatus.rejected,
-            decidedBy: callerId,
-            decidedAt: new Date(),
-            decisionComment: dto.comment,
-          },
-        });
-
-        if (updateRes.count === 0) {
-          throw new ConflictException('Request was updated concurrently or is no longer pending');
-        }
-
-        for (const b of balances) {
-          await this.balancesService.release(tx, request.userId, b.leaveTypeId, b.year, b.amount);
-        }
-
-        await this.auditService.log({
-          orgId,
-          actorId: callerId,
-          targetUserId: request.userId,
-          action: AuditAction.LEAVE_REJECTED,
-          reason: dto.comment,
-          metadata: {
-            requestId: id,
-            requesterId: request.userId,
-            countedDays: request.countedDays ? request.countedDays.toString() : '0',
-            comment: dto.comment,
-          },
-        }, tx);
-
-        return {
-          message: 'Leave request rejected successfully',
-          id,
-          status: RequestStatus.rejected,
-        };
-      },
-    );
-    return result;
+    const result = await this.decideRequest(callerId, callerRole, orgId, id, { decisions });
+    return {
+      ...result,
+      message: 'Leave request rejected successfully',
+    };
   }
 }

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Portion, RequestStatus, SkipReason } from '@prisma/client';
+import { Portion, RequestStatus, SegmentStatus, SkipReason } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ScheduleResolverService } from '../../schedules/schedule-resolver.service';
 import { DateUtil } from '../utils/date.util';
@@ -137,9 +137,10 @@ export class AvailabilityService {
         userId: { in: activeUserIds },
         startDate: { lte: toDate },
         endDate: { gte: fromDate },
+        status: SegmentStatus.approved,
         request: {
           orgId,
-          status: RequestStatus.approved,
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
         },
       },
       select: {
@@ -292,8 +293,12 @@ export class AvailabilityService {
         userId: { in: activeUserIds },
         orgId,
         date: targetDate,
+        occupancy: { gt: 0 },
+        segment: {
+          status: SegmentStatus.approved,
+        },
         request: {
-          status: RequestStatus.approved,
+          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
         },
       },
       select: {

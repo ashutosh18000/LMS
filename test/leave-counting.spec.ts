@@ -79,6 +79,11 @@ describe('Leave Counting & Breakdown Unit Tests (Pure Logic, No DB)', () => {
       log: jest.fn(),
     };
 
+    const mockNotificationsService: any = {
+      createDecisionNotifications: jest.fn(),
+      createCancellationNotifications: jest.fn(),
+    };
+
     service = new LeaveRequestsService(
       mockPrisma,
       mockResolver,
@@ -86,6 +91,7 @@ describe('Leave Counting & Breakdown Unit Tests (Pure Logic, No DB)', () => {
       leaveYearService,
       clockService,
       mockAuditService,
+      mockNotificationsService,
     );
   });
 

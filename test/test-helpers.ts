@@ -40,6 +40,7 @@ export async function cleanTestDatabase(prisma: PrismaService): Promise<void> {
 
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE 
+      "Notification",
       "AuditLog",
       "RefreshToken",
       "LeaveSegmentDay",

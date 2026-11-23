@@ -13,6 +13,7 @@ import {
   Prisma,
   RequestStatus,
   Role,
+  SegmentStatus,
   SkipReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,7 @@ import { ScheduleResolverService } from '../schedules/schedule-resolver.service'
 import { BalancesService } from '../balances/balances.service';
 import { LeaveYearService } from '../balances/leave-year.service';
 import { ClockService } from '../common/services/clock.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { DateUtil } from '../common/utils/date.util';
 import { LeaveRequestException } from './exceptions/leave-request.exception';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
@@ -90,6 +92,7 @@ export class LeaveRequestsService {
     private readonly leaveYearService: LeaveYearService,
     private readonly clockService: ClockService,
     private readonly auditService: AuditService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
@@ -387,7 +390,15 @@ export class LeaveRequestsService {
         orgId,
         date: { in: occupiedDates.map((date) => DateUtil.parse(date)) },
         occupancy: { gt: 0 },
-        request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+        request: {
+          status: {
+            in: [
+              RequestStatus.pending,
+              RequestStatus.approved,
+              RequestStatus.partially_approved,
+            ],
+          },
+        },
       },
       include: {
         segment: { select: { portion: true, startDate: true, endDate: true } },
@@ -470,7 +481,15 @@ export class LeaveRequestsService {
           lte: DateUtil.parse(lastCandidate),
         },
         occupancy: { gt: 0 },
-        request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+        request: {
+          status: {
+            in: [
+              RequestStatus.pending,
+              RequestStatus.approved,
+              RequestStatus.partially_approved,
+            ],
+          },
+        },
       },
       select: { date: true },
     });
@@ -516,7 +535,16 @@ export class LeaveRequestsService {
               gte: DateUtil.parse(`${month}-01`),
               lte: new Date(Date.UTC(Number(yearString), Number(monthString), 0)),
             },
-            request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+            occupancy: { gt: 0 },
+            request: {
+              status: {
+                in: [
+                  RequestStatus.pending,
+                  RequestStatus.approved,
+                  RequestStatus.partially_approved,
+                ],
+              },
+            },
           },
           _sum: { countedWeight: true },
         });
@@ -714,6 +742,7 @@ export class LeaveRequestsService {
       id: randomUUID(),
       segment,
     }));
+    const decisionDate = new Date();
     await tx.leaveSegment.createMany({
       data: segmentsWithIds.map(({ id, segment }) => ({
         id,
@@ -725,6 +754,12 @@ export class LeaveRequestsService {
         endDate: DateUtil.parse(segment.endDate),
         portion: segment.portion,
         countedDays: new Prisma.Decimal(segment.countedDays),
+        status: isAuto ? SegmentStatus.approved : SegmentStatus.pending,
+        decidedBy: isAuto ? options.createdBy : null,
+        decidedAt: isAuto ? decisionDate : null,
+        decisionComment: isAuto
+          ? options.decisionComment ?? 'Approved via on-behalf application'
+          : null,
       })),
     });
     await tx.leaveSegmentDay.createMany({
@@ -965,6 +1000,9 @@ export class LeaveRequestsService {
         endDate: DateUtil.format(s.endDate),
         portion: s.portion,
         countedDays: s.countedDays,
+        status: s.status,
+        decidedAt: s.decidedAt,
+        decisionComment: s.decisionComment,
       })),
     }));
 
@@ -1039,6 +1077,9 @@ export class LeaveRequestsService {
         endDate: DateUtil.format(s.endDate),
         portion: s.portion,
         countedDays: s.countedDays,
+        status: s.status,
+        decidedAt: s.decidedAt,
+        decisionComment: s.decisionComment,
       })),
       segmentDays: request.segmentDays.map((d) => ({
         id: d.id,
@@ -1059,7 +1100,13 @@ export class LeaveRequestsService {
     const request = await this.prisma.leaveRequest.findFirst({
       where: { id, orgId },
       include: {
+        user: { select: { id: true, name: true, role: true, managerId: true } },
         organization: { select: { financialYearStartMonth: true } },
+        segments: {
+          include: {
+            leaveType: { select: { isWfh: true, deductsBalance: true } },
+          },
+        },
         segmentDays: {
           include: {
             leaveType: { select: { deductsBalance: true } },
@@ -1111,9 +1158,39 @@ export class LeaveRequestsService {
           );
         }
 
+        // Cancel pending segments
+        await tx.leaveSegment.updateMany({
+          where: { requestId: id, status: SegmentStatus.pending },
+          data: { status: SegmentStatus.cancelled },
+        });
+
+        // Set occupancy to 0 on all segment days
+        await tx.leaveSegmentDay.updateMany({
+          where: { requestId: id },
+          data: { occupancy: 0 },
+        });
+
         for (const b of balances) {
           await this.balancesService.release(tx, userId, b.leaveTypeId, b.year, b.amount);
         }
+
+        // Send cancellation notifications
+        await this.notificationsService.createCancellationNotifications(tx, {
+          orgId,
+          requestId: id,
+          cancelledBy: 'staff',
+          requester: {
+            id: request.user.id,
+            name: request.user.name,
+            managerId: request.user.managerId,
+          },
+          segments: request.segments.map((s) => ({
+            isWfh: s.leaveType.isWfh,
+            startDate: s.startDate,
+            endDate: s.endDate,
+            portion: s.portion,
+          })),
+        });
 
         return {
           message: 'Leave request cancelled successfully',
@@ -1221,11 +1298,16 @@ export class LeaveRequestsService {
     const request = await this.prisma.leaveRequest.findFirst({
       where: { id, orgId },
       include: {
-        user: { select: { id: true, role: true, orgId: true } },
+        user: { select: { id: true, name: true, role: true, orgId: true, managerId: true } },
         organization: { select: { financialYearStartMonth: true } },
-        segmentDays: {
+        segments: {
           include: {
-            leaveType: { select: { deductsBalance: true } },
+            leaveType: { select: { id: true, isWfh: true, deductsBalance: true } },
+            segmentDays: {
+              include: {
+                leaveType: { select: { deductsBalance: true } },
+              },
+            },
           },
         },
       },
@@ -1240,15 +1322,24 @@ export class LeaveRequestsService {
       throw new ForbiddenException('Aap is approved leave ko cancel nahi kar sakte');
     }
 
-    if (request.status !== RequestStatus.approved) {
+    if (
+      request.status !== RequestStatus.approved &&
+      request.status !== RequestStatus.partially_approved
+    ) {
       throw new ConflictException(
-        `Sirf approved request cancel ho sakti hai. Current status: ${request.status}`,
+        `Sirf approved ya partially approved request cancel ho sakti hai. Current status: ${request.status}`,
       );
     }
 
+    const approvedSegments = request.segments.filter(
+      (s) => s.status === SegmentStatus.approved,
+    );
+    const approvedSegmentIds = approvedSegments.map((s) => s.id);
+    const approvedDays = approvedSegments.flatMap((s) => s.segmentDays);
+
     const balances = this.calculateBalanceAmountsFromDays(
       request.organization?.financialYearStartMonth ?? 4,
-      request.segmentDays,
+      approvedDays,
     );
     const result = await this.prisma.$transaction(
       async (tx) => {
@@ -1258,7 +1349,11 @@ export class LeaveRequestsService {
 
         // Atomically update status to cancelled without overwriting decisionComment
         const updateRes = await tx.leaveRequest.updateMany({
-          where: { id, orgId, status: RequestStatus.approved },
+          where: {
+            id,
+            orgId,
+            status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
+          },
           data: {
             status: RequestStatus.cancelled,
             cancelledAt: new Date(),
@@ -1267,6 +1362,20 @@ export class LeaveRequestsService {
 
         if (updateRes.count === 0) {
           throw new ConflictException('Request was updated concurrently or is no longer approved');
+        }
+
+        // Cancel approved segments
+        if (approvedSegmentIds.length > 0) {
+          await tx.leaveSegment.updateMany({
+            where: { id: { in: approvedSegmentIds } },
+            data: { status: SegmentStatus.cancelled },
+          });
+
+          // Zero occupancy for approved segment days
+          await tx.leaveSegmentDay.updateMany({
+            where: { segmentId: { in: approvedSegmentIds } },
+            data: { occupancy: 0 },
+          });
         }
 
         for (const b of balances) {
@@ -1285,6 +1394,24 @@ export class LeaveRequestsService {
             reason: dto.reason,
           },
         }, tx);
+
+        // Send cancellation notifications
+        await this.notificationsService.createCancellationNotifications(tx, {
+          orgId,
+          requestId: id,
+          cancelledBy: 'hr',
+          requester: {
+            id: request.user.id,
+            name: request.user.name,
+            managerId: request.user.managerId,
+          },
+          segments: approvedSegments.map((s) => ({
+            isWfh: s.leaveType.isWfh,
+            startDate: s.startDate,
+            endDate: s.endDate,
+            portion: s.portion,
+          })),
+        });
 
         return {
           message: 'Approved leave request cancelled successfully',
@@ -1406,6 +1533,9 @@ export class LeaveRequestsService {
         endDate: DateUtil.format(s.endDate),
         portion: s.portion,
         countedDays: s.countedDays,
+        status: s.status,
+        decidedAt: s.decidedAt,
+        decisionComment: s.decisionComment,
       })),
     }));
 
@@ -1448,6 +1578,16 @@ export class LeaveRequestsService {
         status: RequestStatus.cancelled,
         cancelledAt: new Date(),
       },
+    });
+
+    await tx.leaveSegment.updateMany({
+      where: { requestId: { in: requestIds }, status: SegmentStatus.pending },
+      data: { status: SegmentStatus.cancelled },
+    });
+
+    await tx.leaveSegmentDay.updateMany({
+      where: { requestId: { in: requestIds } },
+      data: { occupancy: 0 },
     });
 
     for (const reqId of requestIds) {
