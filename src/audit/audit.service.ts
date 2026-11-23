@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export enum AuditAction {
@@ -73,8 +74,11 @@ export class AuditService {
    * Records an immutable audit log entry.
    * Audit logs cannot be updated or deleted.
    */
-  async log(data: CreateAuditLogDto) {
-    return this.prisma.auditLog.create({
+  async log(
+    data: CreateAuditLogDto,
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    return db.auditLog.create({
       data: {
         orgId: data.orgId ?? null,
         actorId: data.actorId,

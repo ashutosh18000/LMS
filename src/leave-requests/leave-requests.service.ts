@@ -6,8 +6,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import {
-  Holiday,
   LeaveType,
   Portion,
   Prisma,
@@ -51,20 +51,32 @@ interface ProcessedSegment {
   days: SegmentDayCalculation[];
 }
 
+interface NewDayEntry {
+  portion: Portion;
+  occupancy: number;
+}
+
+interface PreparedRequest {
+  leaveTypes: LeaveType[];
+  processedSegments: ProcessedSegment[];
+  newDaysByDate: Map<string, NewDayEntry[]>;
+  monthlyRequests: Map<string, number>;
+  balanceNeededMap: Map<string, number>;
+  totalSpanDays: number;
+  totalCountedDays: number;
+}
+
 export interface CreateRequestOptions {
   targetUserId: string;
   orgId: string;
   createdBy: string;
   reason: string;
-  segments: CreateLeaveSegmentDto[];
-  bypassBackdate?: boolean;
-  bypassNotice?: boolean;
   autoApprove?: boolean;
   decisionComment?: string;
+  prepared: PreparedRequest;
 }
 
 export interface ProcessValidationOptions {
-  isDryRun?: boolean;
   bypassBackdate?: boolean;
   bypassNotice?: boolean;
 }
@@ -88,16 +100,24 @@ export class LeaveRequestsService {
     userId: string,
     orgId: string,
     dto: { reason?: string; segments: CreateLeaveSegmentDto[] },
-    isDryRun = false,
-    client?: PrismaService | Prisma.TransactionClient,
     options?: ProcessValidationOptions,
-  ) {
-    const db = (client as any) ?? this.prisma;
+  ): Promise<PreparedRequest> {
+    const typeIds = [...new Set(dto.segments.map((s) => s.leaveTypeId))];
+    const [org, leaveTypes] = await Promise.all([
+      this.prisma.organization.findUnique({
+        where: { id: orgId },
+        select: {
+          timezone: true,
+          workingDays: true,
+          backdateAllowedDays: true,
+          financialYearStartMonth: true,
+        },
+      }),
+      this.prisma.leaveType.findMany({
+        where: { id: { in: typeIds }, orgId },
+      }),
+    ]);
 
-    // 1. Fetch organization
-    const org = await db.organization.findUnique({
-      where: { id: orgId },
-    });
     if (!org) {
       throw new LeaveRequestException(
         HttpStatus.BAD_REQUEST,
@@ -105,15 +125,6 @@ export class LeaveRequestsService {
         'Organization maujood nahi hai',
       );
     }
-
-    // 2. Fetch all leave types referenced in segments
-    const typeIds = [...new Set(dto.segments.map((s) => s.leaveTypeId))];
-    const leaveTypes: LeaveType[] = await db.leaveType.findMany({
-      where: {
-        id: { in: typeIds },
-        orgId,
-      },
-    });
 
     if (leaveTypes.length !== typeIds.length || leaveTypes.some((t: LeaveType) => !t.active)) {
       throw new LeaveRequestException(
@@ -166,25 +177,26 @@ export class LeaveRequestsService {
     const minDateStr = DateUtil.min(allStartDates);
     const maxDateStr = DateUtil.max(allEndDates);
 
-    const scheduleMap = await this.scheduleResolverService.resolveRange(
-      userId,
-      minDateStr,
-      maxDateStr,
-      db,
-      org.workingDays,
-    );
-
-    const holidays: Holiday[] = await db.holiday.findMany({
-      where: {
-        orgId,
-        active: true,
-        date: {
-          gte: DateUtil.parse(minDateStr),
-          lte: DateUtil.parse(maxDateStr),
+    const [scheduleMap, holidays] = await Promise.all([
+      this.scheduleResolverService.resolveRange(
+        userId,
+        minDateStr,
+        maxDateStr,
+        this.prisma,
+        org.workingDays,
+      ),
+      this.prisma.holiday.findMany({
+        where: {
+          orgId,
+          active: true,
+          date: {
+            gte: DateUtil.parse(minDateStr),
+            lte: DateUtil.parse(maxDateStr),
+          },
         },
-      },
-    });
-    const holidaySet = new Set(holidays.map((h: Holiday) => DateUtil.format(h.date)));
+      }),
+    ]);
+    const holidaySet = new Set(holidays.map((holiday) => DateUtil.format(holiday.date)));
 
     const processedSegments: ProcessedSegment[] = [];
 
@@ -270,17 +282,14 @@ export class LeaveRequestsService {
 
     // 6. Overlap validation
     // A. Check internal overlaps within this request's own segments
-    const newDaysByDate = new Map<
-      string,
-      Array<{ portion: Portion; occupancy: number; segIdx: number }>
-    >();
+    const newDaysByDate = new Map<string, NewDayEntry[]>();
 
     for (let sIdx = 0; sIdx < processedSegments.length; sIdx++) {
       const seg = processedSegments[sIdx];
       for (const d of seg.days) {
         if (d.occupancy > 0) {
           const list = newDaysByDate.get(d.date) ?? [];
-          list.push({ portion: d.portion, occupancy: d.occupancy, segIdx: sIdx });
+          list.push({ portion: d.portion, occupancy: d.occupancy });
           newDaysByDate.set(d.date, list);
         }
       }
@@ -316,106 +325,6 @@ export class LeaveRequestsService {
       }
     }
 
-    // B. Check external overlaps with existing pending or approved requests for this user
-    const occupiedDates = Array.from(newDaysByDate.keys());
-    if (occupiedDates.length > 0) {
-      const occupiedDateObjs = occupiedDates.map((d) => DateUtil.parse(d));
-
-      const existingDays = await db.leaveSegmentDay.findMany({
-        where: {
-          userId,
-          orgId,
-          date: { in: occupiedDateObjs },
-          occupancy: { gt: 0 },
-          request: {
-            status: { in: [RequestStatus.pending, RequestStatus.approved] },
-          },
-        },
-        include: {
-          segment: { select: { portion: true, startDate: true, endDate: true } },
-          request: { select: { id: true } },
-        },
-      });
-
-      const conflictingDates: string[] = [];
-      const conflictMap = new Map<
-        string,
-        { requestId: string; startDate: string; endDate: string; overlappingDates: string[] }
-      >();
-
-      for (const exDay of existingDays) {
-        const dateStr = DateUtil.format(exDay.date);
-        const newEntries = newDaysByDate.get(dateStr) || [];
-        const existingOcc = Number(exDay.occupancy);
-        const newOcc = newEntries.reduce((acc, curr) => acc + curr.occupancy, 0);
-        const totalOcc = existingOcc + newOcc;
-
-        const isBothHalfDistinct =
-          existingOcc === 0.5 &&
-          newOcc === 0.5 &&
-          ((exDay.segment.portion === Portion.first_half &&
-            newEntries[0].portion === Portion.second_half) ||
-            (exDay.segment.portion === Portion.second_half &&
-              newEntries[0].portion === Portion.first_half));
-
-        if (totalOcc > 1.0 || !isBothHalfDistinct) {
-          conflictingDates.push(dateStr);
-          const reqId = exDay.request.id;
-          const conf = conflictMap.get(reqId) ?? {
-            requestId: reqId,
-            startDate: DateUtil.format(exDay.segment.startDate),
-            endDate: DateUtil.format(exDay.segment.endDate),
-            overlappingDates: [] as string[],
-          };
-          if (!conf.overlappingDates.includes(dateStr)) {
-            conf.overlappingDates.push(dateStr);
-          }
-          conflictMap.set(reqId, conf);
-        }
-      }
-
-      if (conflictingDates.length > 0) {
-        const sortedConflicts = Array.from(new Set(conflictingDates)).sort();
-        const maxConfDate = sortedConflicts[sortedConflicts.length - 1];
-
-        // Find next free date starting right after the latest conflicting date
-        let probe = DateUtil.addDays(maxConfDate, 1);
-        for (let i = 0; i < 365; i++) {
-          const probeObj = DateUtil.parse(probe);
-          const occupiedCount = await db.leaveSegmentDay.count({
-            where: {
-              userId,
-              orgId,
-              date: probeObj,
-              occupancy: { gt: 0 },
-              request: {
-                status: { in: [RequestStatus.pending, RequestStatus.approved] },
-              },
-            },
-          });
-          if (occupiedCount === 0) {
-            break;
-          }
-          probe = DateUtil.addDays(probe, 1);
-        }
-
-        const dateRangeStr =
-          sortedConflicts.length === 1
-            ? sortedConflicts[0]
-            : `${sortedConflicts[0]} se ${sortedConflicts[sortedConflicts.length - 1]}`;
-
-        throw new LeaveRequestException(
-          HttpStatus.CONFLICT,
-          'OVERLAP',
-          `${dateRangeStr} pehle se doosri request mein hai. Aap ${probe} se apply kar sakte ho.`,
-          {
-            conflicts: Array.from(conflictMap.values()),
-            nextFreeDate: probe,
-          },
-        );
-      }
-    }
-
     // 7. Monthly limit validation (for all types where monthlyLimit !== null)
     const monthlyRequests = new Map<string, number>(); // key: `${leaveTypeId}_${YYYY-MM}`
     for (const seg of processedSegments) {
@@ -428,48 +337,6 @@ export class LeaveRequestsService {
             monthlyRequests.set(key, (monthlyRequests.get(key) ?? 0) + d.countedWeight);
           }
         }
-      }
-    }
-
-    for (const [key, requestedWeight] of monthlyRequests.entries()) {
-      const [typeId, monthStr] = key.split('_');
-      const lt = typeMap.get(typeId)!;
-      const [yStr, mStr] = monthStr.split('-');
-      const startOfMonth = DateUtil.parse(`${monthStr}-01`);
-      const endOfMonth = new Date(Date.UTC(parseInt(yStr, 10), parseInt(mStr, 10), 0));
-
-      const existingAgg = await db.leaveSegmentDay.aggregate({
-        where: {
-          userId,
-          orgId,
-          leaveTypeId: typeId,
-          date: { gte: startOfMonth, lte: endOfMonth },
-          request: {
-            status: { in: [RequestStatus.pending, RequestStatus.approved] },
-          },
-        },
-        _sum: { countedWeight: true },
-      });
-
-      const usedInMonth = existingAgg._sum.countedWeight
-        ? Number(existingAgg._sum.countedWeight)
-        : 0;
-      const totalMonth = usedInMonth + requestedWeight;
-      const limit = Number(lt.monthlyLimit);
-
-      if (totalMonth > limit) {
-        throw new LeaveRequestException(
-          HttpStatus.BAD_REQUEST,
-          'MONTHLY_LIMIT_EXCEEDED',
-          `${lt.name} ka monthly limit (${limit} din) exceed ho raha hai mahine ${monthStr} mein`,
-          {
-            leaveTypeId: typeId,
-            month: monthStr,
-            limit,
-            used: usedInMonth,
-            requested: requestedWeight,
-          },
-        );
       }
     }
 
@@ -491,40 +358,233 @@ export class LeaveRequestsService {
       }
     }
 
-    for (const [key, needed] of balanceNeededMap.entries()) {
-      const [typeId, yearStr] = key.split('_');
-      const year = parseInt(yearStr, 10);
-      const lt = typeMap.get(typeId)!;
+    const totalSpanDays = DateUtil.daysBetween(minDateStr, maxDateStr);
+    const totalCountedDays = processedSegments.reduce((sum, s) => sum + s.countedDays, 0);
 
-      const balance = await db.leaveBalance.findUnique({
-        where: {
-          userId_leaveTypeId_year: {
-            userId,
-            leaveTypeId: typeId,
-            year,
-          },
-        },
+    return {
+      leaveTypes,
+      processedSegments,
+      newDaysByDate,
+      monthlyRequests,
+      balanceNeededMap,
+      totalSpanDays,
+      totalCountedDays,
+    };
+  }
+
+  private async validateOverlaps(
+    db: PrismaService | Prisma.TransactionClient,
+    userId: string,
+    orgId: string,
+    newDaysByDate: Map<string, NewDayEntry[]>,
+  ): Promise<void> {
+    const occupiedDates = Array.from(newDaysByDate.keys());
+    if (occupiedDates.length === 0) return;
+
+    const existingDays = await db.leaveSegmentDay.findMany({
+      where: {
+        userId,
+        orgId,
+        date: { in: occupiedDates.map((date) => DateUtil.parse(date)) },
+        occupancy: { gt: 0 },
+        request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+      },
+      include: {
+        segment: { select: { portion: true, startDate: true, endDate: true } },
+        request: { select: { id: true } },
+      },
+    });
+
+    const conflictsByDate = new Map<
+      string,
+      Array<{
+        requestId: string;
+        startDate: string;
+        endDate: string;
+        portion: Portion;
+        occupancy: number;
+      }>
+    >();
+    for (const existing of existingDays) {
+      const date = DateUtil.format(existing.date);
+      const entries = conflictsByDate.get(date) ?? [];
+      entries.push({
+        requestId: existing.request.id,
+        startDate: DateUtil.format(existing.segment.startDate),
+        endDate: DateUtil.format(existing.segment.endDate),
+        portion: existing.segment.portion,
+        occupancy: Number(existing.occupancy),
       });
+      conflictsByDate.set(date, entries);
+    }
 
+    const conflictingDates: string[] = [];
+    const conflictMap = new Map<
+      string,
+      { requestId: string; startDate: string; endDate: string; overlappingDates: string[] }
+    >();
+    for (const [date, conflicts] of conflictsByDate) {
+      const newEntries = newDaysByDate.get(date) ?? [];
+      const newOccupancy = newEntries.reduce((sum, entry) => sum + entry.occupancy, 0);
+      const existingOccupancy = conflicts.reduce((sum, entry) => sum + entry.occupancy, 0);
+      const matchingHalf = conflicts.some(
+        (existing) =>
+          existing.occupancy === 0.5 &&
+          newOccupancy === 0.5 &&
+          newEntries.length === 1 &&
+          ((existing.portion === Portion.first_half &&
+            newEntries[0].portion === Portion.second_half) ||
+            (existing.portion === Portion.second_half &&
+              newEntries[0].portion === Portion.first_half)),
+      );
+
+      if (existingOccupancy + newOccupancy > 1 || !matchingHalf) {
+        conflictingDates.push(date);
+        for (const existing of conflicts) {
+          const conflict = conflictMap.get(existing.requestId) ?? {
+            requestId: existing.requestId,
+            startDate: existing.startDate,
+            endDate: existing.endDate,
+            overlappingDates: [],
+          };
+          if (!conflict.overlappingDates.includes(date)) {
+            conflict.overlappingDates.push(date);
+          }
+          conflictMap.set(existing.requestId, conflict);
+        }
+      }
+    }
+
+    if (conflictingDates.length === 0) return;
+
+    const sortedConflicts = Array.from(new Set(conflictingDates)).sort();
+    const maxConflictDate = sortedConflicts[sortedConflicts.length - 1];
+    const firstCandidate = DateUtil.addDays(maxConflictDate, 1);
+    const lastCandidate = DateUtil.addDays(maxConflictDate, 365);
+    const occupiedAfterConflict = await db.leaveSegmentDay.findMany({
+      where: {
+        userId,
+        orgId,
+        date: {
+          gte: DateUtil.parse(firstCandidate),
+          lte: DateUtil.parse(lastCandidate),
+        },
+        occupancy: { gt: 0 },
+        request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+      },
+      select: { date: true },
+    });
+    const occupiedDateSet = new Set(occupiedAfterConflict.map((day) => DateUtil.format(day.date)));
+    let nextFreeDate = firstCandidate;
+    for (let i = 0; i < 365 && occupiedDateSet.has(nextFreeDate); i++) {
+      nextFreeDate = DateUtil.addDays(nextFreeDate, 1);
+    }
+
+    const dateRange =
+      sortedConflicts.length === 1
+        ? sortedConflicts[0]
+        : `${sortedConflicts[0]} se ${sortedConflicts[sortedConflicts.length - 1]}`;
+
+    throw new LeaveRequestException(
+      HttpStatus.CONFLICT,
+      'OVERLAP',
+      `${dateRange} pehle se doosri request mein hai. Aap ${nextFreeDate} se apply kar sakte ho.`,
+      {
+        conflicts: Array.from(conflictMap.values()),
+        nextFreeDate,
+      },
+    );
+  }
+
+  private async validateMonthlyLimits(
+    db: PrismaService | Prisma.TransactionClient,
+    userId: string,
+    orgId: string,
+    prepared: Pick<PreparedRequest, 'monthlyRequests' | 'leaveTypes'>,
+  ): Promise<void> {
+    const leaveTypes = new Map(prepared.leaveTypes.map((type) => [type.id, type]));
+    const monthlyUsage = await Promise.all(
+      Array.from(prepared.monthlyRequests.entries()).map(async ([key, requestedWeight]) => {
+        const [typeId, month] = key.split('_');
+        const [yearString, monthString] = month.split('-');
+        const existing = await db.leaveSegmentDay.aggregate({
+          where: {
+            userId,
+            orgId,
+            leaveTypeId: typeId,
+            date: {
+              gte: DateUtil.parse(`${month}-01`),
+              lte: new Date(Date.UTC(Number(yearString), Number(monthString), 0)),
+            },
+            request: { status: { in: [RequestStatus.pending, RequestStatus.approved] } },
+          },
+          _sum: { countedWeight: true },
+        });
+        return { key, requestedWeight, used: Number(existing._sum.countedWeight ?? 0) };
+      }),
+    );
+
+    for (const { key, requestedWeight, used } of monthlyUsage) {
+      const [typeId, month] = key.split('_');
+      const type = leaveTypes.get(typeId)!;
+      const limit = Number(type.monthlyLimit);
+      if (used + requestedWeight > limit) {
+        throw new LeaveRequestException(
+          HttpStatus.BAD_REQUEST,
+          'MONTHLY_LIMIT_EXCEEDED',
+          `${type.name} ka monthly limit (${limit} din) exceed ho raha hai mahine ${month} mein`,
+          {
+            leaveTypeId: typeId,
+            month,
+            limit,
+            used,
+            requested: requestedWeight,
+          },
+        );
+      }
+    }
+  }
+
+  private async validateBalances(
+    userId: string,
+    prepared: Pick<PreparedRequest, 'balanceNeededMap' | 'leaveTypes'>,
+  ): Promise<void> {
+    const entries = Array.from(prepared.balanceNeededMap.entries()).map(([key, needed]) => {
+      const [leaveTypeId, yearString] = key.split('_');
+      return { leaveTypeId, year: Number(yearString), needed };
+    });
+    if (entries.length === 0) return;
+
+    const balances = await Promise.all(
+      entries.map(({ leaveTypeId, year }) =>
+        this.prisma.leaveBalance.findUnique({
+          where: { userId_leaveTypeId_year: { userId, leaveTypeId, year } },
+        }),
+      ),
+    );
+    const leaveTypes = new Map(prepared.leaveTypes.map((type) => [type.id, type]));
+
+    for (const [index, { leaveTypeId, year, needed }] of entries.entries()) {
+      const type = leaveTypes.get(leaveTypeId)!;
+      const balance = balances[index];
       if (!balance) {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'NO_BALANCE',
-          `Saal ${year} ke liye ${lt.name} ka balance allocate nahi hua hai. HR se allocation karwayein.`,
+          `Saal ${year} ke liye ${type.name} ka balance allocate nahi hua hai. HR se allocation karwayein.`,
         );
       }
 
       const available =
         Number(balance.allocated) - Number(balance.used) - Number(balance.pending);
-
       if (available < needed) {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'INSUFFICIENT_BALANCE',
-          `Saal ${year} mein ${lt.name} ka balance kam hai. Chahiye: ${needed}, bacha hai: ${available}`,
+          `Saal ${year} mein ${type.name} ka balance kam hai. Chahiye: ${needed}, bacha hai: ${available}`,
           {
-            leaveTypeId: typeId,
-            typeName: lt.name,
+            leaveTypeId,
+            typeName: type.name,
             year,
             requested: needed,
             available,
@@ -532,17 +592,6 @@ export class LeaveRequestsService {
         );
       }
     }
-
-    const totalSpanDays = DateUtil.daysBetween(minDateStr, maxDateStr);
-    const totalCountedDays = processedSegments.reduce((sum, s) => sum + s.countedDays, 0);
-
-    return {
-      org,
-      processedSegments,
-      balanceNeededMap,
-      totalSpanDays,
-      totalCountedDays,
-    };
   }
 
   /**
@@ -567,10 +616,24 @@ export class LeaveRequestsService {
 
     if (!req) return [];
 
-    const startMonth = req.organization?.financialYearStartMonth ?? 4;
+    return this.calculateBalanceAmountsFromDays(
+      req.organization?.financialYearStartMonth ?? 4,
+      req.segmentDays,
+    );
+  }
+
+  calculateBalanceAmountsFromDays(
+    startMonth: number,
+    segmentDays: Array<{
+      leaveTypeId: string;
+      date: Date;
+      countedWeight: Prisma.Decimal;
+      leaveType: { deductsBalance: boolean };
+    }>,
+  ): Array<{ leaveTypeId: string; year: number; amount: number }> {
     const map = new Map<string, number>();
 
-    for (const day of req.segmentDays) {
+    for (const day of segmentDays) {
       if (day.leaveType.deductsBalance && day.countedWeight.greaterThan(0)) {
         const dateStr = DateUtil.format(day.date);
         const year = this.leaveYearService.leaveYearOf(dateStr, startMonth);
@@ -605,19 +668,20 @@ export class LeaveRequestsService {
       Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${options.targetUserId}, 0::bigint))`,
     );
 
-    // Steps 1 - 8: Validate and calculate
-    const { processedSegments, balanceNeededMap, totalSpanDays, totalCountedDays } =
-      await this.processAndValidateRequest(
-        options.targetUserId,
-        options.orgId,
-        { reason: options.reason, segments: options.segments },
-        false,
-        tx,
-        {
-          bypassBackdate: options.bypassBackdate,
-          bypassNotice: options.bypassNotice,
-        },
-      );
+    const {
+      processedSegments,
+      newDaysByDate,
+      monthlyRequests,
+      balanceNeededMap,
+      totalSpanDays,
+      totalCountedDays,
+    } = options.prepared;
+
+    await this.validateOverlaps(tx, options.targetUserId, options.orgId, newDaysByDate);
+    await this.validateMonthlyLimits(tx, options.targetUserId, options.orgId, {
+      monthlyRequests,
+      leaveTypes: options.prepared.leaveTypes,
+    });
 
     // Reserve balances for each (leaveTypeId, year) inside transaction
     for (const [key, needed] of balanceNeededMap.entries()) {
@@ -646,35 +710,38 @@ export class LeaveRequestsService {
       },
     });
 
-    // Create segments and segment days
-    for (const seg of processedSegments) {
-      const leaveSegment = await tx.leaveSegment.create({
-        data: {
+    const segmentsWithIds = processedSegments.map((segment) => ({
+      id: randomUUID(),
+      segment,
+    }));
+    await tx.leaveSegment.createMany({
+      data: segmentsWithIds.map(({ id, segment }) => ({
+        id,
+        requestId: leaveRequest.id,
+        orgId: options.orgId,
+        userId: options.targetUserId,
+        leaveTypeId: segment.leaveTypeId,
+        startDate: DateUtil.parse(segment.startDate),
+        endDate: DateUtil.parse(segment.endDate),
+        portion: segment.portion,
+        countedDays: new Prisma.Decimal(segment.countedDays),
+      })),
+    });
+    await tx.leaveSegmentDay.createMany({
+      data: segmentsWithIds.flatMap(({ id, segment }) =>
+        segment.days.map((day) => ({
+          segmentId: id,
           requestId: leaveRequest.id,
           orgId: options.orgId,
           userId: options.targetUserId,
-          leaveTypeId: seg.leaveTypeId,
-          startDate: DateUtil.parse(seg.startDate),
-          endDate: DateUtil.parse(seg.endDate),
-          portion: seg.portion,
-          countedDays: new Prisma.Decimal(seg.countedDays),
-        },
-      });
-
-      await tx.leaveSegmentDay.createMany({
-        data: seg.days.map((d) => ({
-          segmentId: leaveSegment.id,
-          requestId: leaveRequest.id,
-          orgId: options.orgId,
-          userId: options.targetUserId,
-          leaveTypeId: seg.leaveTypeId,
-          date: DateUtil.parse(d.date),
-          occupancy: new Prisma.Decimal(d.occupancy),
-          countedWeight: new Prisma.Decimal(d.countedWeight),
-          skipReason: d.skipReason,
+          leaveTypeId: segment.leaveTypeId,
+          date: DateUtil.parse(day.date),
+          occupancy: new Prisma.Decimal(day.occupancy),
+          countedWeight: new Prisma.Decimal(day.countedWeight),
+          skipReason: day.skipReason,
         })),
-      });
-    }
+      ),
+    });
 
     // If autoApprove, commit reserved balances immediately
     if (isAuto) {
@@ -685,9 +752,12 @@ export class LeaveRequestsService {
       }
     }
 
-    // Return full entity with relations
-    return tx.leaveRequest.findUnique({
-      where: { id: leaveRequest.id },
+    return leaveRequest.id;
+  }
+
+  private async findCreatedRequest(id: string) {
+    const request = await this.prisma.leaveRequest.findUnique({
+      where: { id },
       include: {
         user: {
           select: { id: true, name: true, role: true, department: true },
@@ -711,6 +781,10 @@ export class LeaveRequestsService {
         },
       },
     });
+    if (!request) {
+      throw new NotFoundException('New leave request could not be loaded');
+    }
+    return request;
   }
 
   /**
@@ -727,20 +801,20 @@ export class LeaveRequestsService {
       throw new ForbiddenException('Owner leave apply nahi karta');
     }
 
-    const txTimeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '30000', 10);
-    const txMaxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '10000', 10);
-    return this.prisma.$transaction(
+    const prepared = await this.processAndValidateRequest(userId, orgId, dto);
+    await this.validateBalances(userId, prepared);
+    const requestId = await this.prisma.$transaction(
       async (tx) => {
         return this.createRequest(tx, {
           targetUserId: userId,
           orgId,
           createdBy: userId,
           reason: dto.reason,
-          segments: dto.segments,
+          prepared,
         });
       },
-      { timeout: txTimeout, maxWait: txMaxWait },
     );
+    return this.findCreatedRequest(requestId);
   }
 
   /**
@@ -757,8 +831,16 @@ export class LeaveRequestsService {
       throw new ForbiddenException('Owner leave apply nahi karta');
     }
 
-    const { processedSegments, totalSpanDays, totalCountedDays } =
-      await this.processAndValidateRequest(userId, orgId, dto, true);
+    const prepared = await this.processAndValidateRequest(userId, orgId, dto);
+    await this.validateOverlaps(
+      this.prisma,
+      userId,
+      orgId,
+      prepared.newDaysByDate,
+    );
+    await this.validateMonthlyLimits(this.prisma, userId, orgId, prepared);
+    await this.validateBalances(userId, prepared);
+    const { processedSegments, totalSpanDays, totalCountedDays } = prepared;
 
     const breakdown: Array<{
       date: string;
@@ -974,40 +1056,40 @@ export class LeaveRequestsService {
    * Cancels a pending request and releases reserved balances.
    */
   async cancelLeaveRequest(userId: string, orgId: string, id: string) {
+    const request = await this.prisma.leaveRequest.findFirst({
+      where: { id, orgId },
+      include: {
+        organization: { select: { financialYearStartMonth: true } },
+        segmentDays: {
+          include: {
+            leaveType: { select: { deductsBalance: true } },
+          },
+        },
+      },
+    });
+
+    if (!request || request.userId !== userId) {
+      throw new NotFoundException('Leave request not found');
+    }
+    if (request.status !== RequestStatus.pending) {
+      throw new LeaveRequestException(
+        HttpStatus.CONFLICT,
+        'CANNOT_CANCEL_REQUEST',
+        `Sirf pending request cancel ho sakti hai. Current status: ${request.status}`,
+      );
+    }
+
+    const balances = this.calculateBalanceAmountsFromDays(
+      request.organization?.financialYearStartMonth ?? 4,
+      request.segmentDays,
+    );
+
     return this.prisma.$transaction(
       async (tx) => {
-        // Step 0: Acquire transaction-scoped advisory lock for the user
         await tx.$executeRaw(
           Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${userId}, 0::bigint))`,
         );
 
-        // 1. Fetch request with segmentDays and leaveType
-        const req = await tx.leaveRequest.findFirst({
-          where: { id, orgId },
-          include: {
-            segmentDays: {
-              include: {
-                leaveType: {
-                  select: { deductsBalance: true },
-                },
-              },
-            },
-          },
-        });
-
-        if (!req || req.userId !== userId) {
-          throw new NotFoundException('Leave request not found');
-        }
-
-        if (req.status !== RequestStatus.pending) {
-          throw new LeaveRequestException(
-            HttpStatus.CONFLICT,
-            'CANNOT_CANCEL_REQUEST',
-            `Sirf pending request cancel ho sakti hai. Current status: ${req.status}`,
-          );
-        }
-
-        // 2. Atomically update status to cancelled
         const updateRes = await tx.leaveRequest.updateMany({
           where: {
             id,
@@ -1029,19 +1111,16 @@ export class LeaveRequestsService {
           );
         }
 
-        // 3. Release reserved balance for deductsBalance leave types using calculateBalanceAmounts
-        const balances = await this.calculateBalanceAmounts(tx, id);
         for (const b of balances) {
           await this.balancesService.release(tx, userId, b.leaveTypeId, b.year, b.amount);
         }
 
         return {
           message: 'Leave request cancelled successfully',
-          id: req.id,
+          id: request.id,
           status: RequestStatus.cancelled,
         };
       },
-      { timeout: 15000 },
     );
   }
 
@@ -1089,26 +1168,28 @@ export class LeaveRequestsService {
     }
 
     const autoApprove = dto.autoApprove ?? true;
-
-    const txTimeout = parseInt(process.env.PRISMA_TRANSACTION_TIMEOUT || '30000', 10);
-    const txMaxWait = parseInt(process.env.PRISMA_TRANSACTION_MAX_WAIT || '10000', 10);
-    const result = await this.prisma.$transaction(
+    const prepared = await this.processAndValidateRequest(
+      targetUser.id,
+      orgId,
+      dto,
+      { bypassBackdate: true, bypassNotice: true },
+    );
+    await this.validateBalances(targetUser.id, prepared);
+    const requestId = await this.prisma.$transaction(
       async (tx) => {
         return this.createRequest(tx, {
           targetUserId: targetUser.id,
           orgId,
           createdBy: callerId,
           reason: dto.reason,
-          segments: dto.segments,
-          bypassBackdate: true,
-          bypassNotice: true,
           autoApprove,
           decisionComment: dto.onBehalfReason,
+          prepared,
         });
       },
-      { timeout: txTimeout, maxWait: txMaxWait },
     );
 
+    const result = await this.findCreatedRequest(requestId);
     await this.auditService.log({
       orgId,
       actorId: callerId,
@@ -1141,6 +1222,12 @@ export class LeaveRequestsService {
       where: { id, orgId },
       include: {
         user: { select: { id: true, role: true, orgId: true } },
+        organization: { select: { financialYearStartMonth: true } },
+        segmentDays: {
+          include: {
+            leaveType: { select: { deductsBalance: true } },
+          },
+        },
       },
     });
 
@@ -1159,9 +1246,12 @@ export class LeaveRequestsService {
       );
     }
 
-    return this.prisma.$transaction(
+    const balances = this.calculateBalanceAmountsFromDays(
+      request.organization?.financialYearStartMonth ?? 4,
+      request.segmentDays,
+    );
+    const result = await this.prisma.$transaction(
       async (tx) => {
-        // Step 0: Acquire transaction-scoped advisory lock for the requester
         await tx.$executeRaw(
           Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
         );
@@ -1179,8 +1269,6 @@ export class LeaveRequestsService {
           throw new ConflictException('Request was updated concurrently or is no longer approved');
         }
 
-        // Refund balances using calculateBalanceAmounts
-        const balances = await this.calculateBalanceAmounts(tx, id);
         for (const b of balances) {
           await this.balancesService.refund(tx, request.userId, b.leaveTypeId, b.year, b.amount);
         }
@@ -1196,7 +1284,7 @@ export class LeaveRequestsService {
             requesterId: request.userId,
             reason: dto.reason,
           },
-        });
+        }, tx);
 
         return {
           message: 'Approved leave request cancelled successfully',
@@ -1204,8 +1292,8 @@ export class LeaveRequestsService {
           status: RequestStatus.cancelled,
         };
       },
-      { timeout: 15000 },
     );
+    return result;
   }
 
   /**

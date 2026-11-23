@@ -456,6 +456,12 @@ export class ApprovalsService {
       where: { id, orgId },
       include: {
         user: { select: { id: true, role: true, orgId: true } },
+        organization: { select: { financialYearStartMonth: true } },
+        segmentDays: {
+          include: {
+            leaveType: { select: { deductsBalance: true } },
+          },
+        },
       },
     });
 
@@ -474,9 +480,12 @@ export class ApprovalsService {
       );
     }
 
-    return this.prisma.$transaction(
+    const balances = this.leaveRequestsService.calculateBalanceAmountsFromDays(
+      request.organization?.financialYearStartMonth ?? 4,
+      request.segmentDays,
+    );
+    const result = await this.prisma.$transaction(
       async (tx) => {
-        // Advisory lock on requester
         await tx.$executeRaw(
           Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
         );
@@ -496,8 +505,6 @@ export class ApprovalsService {
           throw new ConflictException('Request was updated concurrently or is no longer pending');
         }
 
-        // Commit balances from pending to used
-        const balances = await this.leaveRequestsService.calculateBalanceAmounts(tx, id);
         for (const b of balances) {
           await this.balancesService.commit(tx, request.userId, b.leaveTypeId, b.year, b.amount);
         }
@@ -514,7 +521,7 @@ export class ApprovalsService {
             countedDays: request.countedDays ? request.countedDays.toString() : '0',
             comment: dto.comment ?? null,
           },
-        });
+        }, tx);
 
         return {
           message: 'Leave request approved successfully',
@@ -522,8 +529,8 @@ export class ApprovalsService {
           status: RequestStatus.approved,
         };
       },
-      { timeout: 15000 },
     );
+    return result;
   }
 
   /**
@@ -541,6 +548,12 @@ export class ApprovalsService {
       where: { id, orgId },
       include: {
         user: { select: { id: true, role: true, orgId: true } },
+        organization: { select: { financialYearStartMonth: true } },
+        segmentDays: {
+          include: {
+            leaveType: { select: { deductsBalance: true } },
+          },
+        },
       },
     });
 
@@ -559,9 +572,12 @@ export class ApprovalsService {
       );
     }
 
-    return this.prisma.$transaction(
+    const balances = this.leaveRequestsService.calculateBalanceAmountsFromDays(
+      request.organization?.financialYearStartMonth ?? 4,
+      request.segmentDays,
+    );
+    const result = await this.prisma.$transaction(
       async (tx) => {
-        // Advisory lock on requester
         await tx.$executeRaw(
           Prisma.sql`SELECT pg_advisory_xact_lock(hashtextextended('leave:' || ${request.userId}, 0::bigint))`,
         );
@@ -581,8 +597,6 @@ export class ApprovalsService {
           throw new ConflictException('Request was updated concurrently or is no longer pending');
         }
 
-        // Release reserved balances
-        const balances = await this.leaveRequestsService.calculateBalanceAmounts(tx, id);
         for (const b of balances) {
           await this.balancesService.release(tx, request.userId, b.leaveTypeId, b.year, b.amount);
         }
@@ -599,7 +613,7 @@ export class ApprovalsService {
             countedDays: request.countedDays ? request.countedDays.toString() : '0',
             comment: dto.comment,
           },
-        });
+        }, tx);
 
         return {
           message: 'Leave request rejected successfully',
@@ -607,7 +621,7 @@ export class ApprovalsService {
           status: RequestStatus.rejected,
         };
       },
-      { timeout: 15000 },
     );
+    return result;
   }
 }

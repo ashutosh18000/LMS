@@ -70,6 +70,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       }
     } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
       switch (exception.code) {
+        case 'P2028': {
+          statusCode = HttpStatus.SERVICE_UNAVAILABLE;
+          code = 'DB_TIMEOUT';
+          message = 'Database operation timed out';
+          break;
+        }
+        case 'P1001':
+        case 'P1002': {
+          statusCode = HttpStatus.SERVICE_UNAVAILABLE;
+          code = 'DB_UNAVAILABLE';
+          message = 'Database is temporarily unavailable';
+          break;
+        }
         case 'P2002': {
           statusCode = HttpStatus.CONFLICT;
           code = 'CONFLICT';
@@ -98,6 +111,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           break;
         }
       }
+    } else if (this.isDatabaseUnavailableError(exception)) {
+      statusCode = HttpStatus.SERVICE_UNAVAILABLE;
+      code = 'DB_UNAVAILABLE';
+      message = 'Database is temporarily unavailable';
     } else if (exception instanceof Error) {
       const errorId = crypto.randomUUID();
       statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -171,5 +188,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       default:
         return 'ERROR';
     }
+  }
+
+  private isDatabaseUnavailableError(
+    exception: unknown,
+  ): exception is Error & { errorCode?: string; code?: string } {
+    if (!(exception instanceof Error)) return false;
+    const error = exception as Error & { errorCode?: string; code?: string };
+    return (
+      error.errorCode === 'P1001' ||
+      error.errorCode === 'P1002' ||
+      error.code === 'P1001' ||
+      error.code === 'P1002'
+    );
   }
 }
