@@ -30,6 +30,19 @@ enum RequestStatus {
   approved
   rejected
   cancelled
+  partially_approved
+}
+
+enum SegmentStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+enum NotificationType {
+  leave_decided
+  leave_cancelled
 }
 
 enum Portion {
@@ -79,6 +92,7 @@ model Organization {
   leaveSegments          LeaveSegment[]
   leaveSegmentDays       LeaveSegmentDay[]
   auditLogs              AuditLog[]
+  notifications          Notification[]
 }
 
 // 2. User: Platform users (root user has orgId = null, others belong to an org)
@@ -112,6 +126,8 @@ model User {
   leaveSegmentDays   LeaveSegmentDay[]
   auditLogsActor     AuditLog[]             @relation("ActorAuditLogs")
   auditLogsTarget    AuditLog[]             @relation("TargetAuditLogs")
+  decidedSegments    LeaveSegment[]         @relation("DecidedSegments")
+  notifications      Notification[]
 
   @@index([orgId])
   @@index([managerId])
@@ -297,6 +313,7 @@ model LeaveRequest {
   decider      User?             @relation("DecidedRequests", fields: [decidedBy], references: [id])
   segments     LeaveSegment[]
   segmentDays  LeaveSegmentDay[]
+  notifications Notification[]
 
   @@index([orgId, status])
   @@index([userId, status])
@@ -313,6 +330,10 @@ model LeaveSegment {
   endDate     DateTime @db.Date
   portion     Portion  @default(full)
   countedDays Decimal  @db.Decimal(5, 1)
+  status      SegmentStatus @default(pending)
+  decidedBy   String?
+  decidedAt   DateTime?     @db.Timestamptz
+  decisionComment String?
   createdAt   DateTime @default(now()) @db.Timestamptz
   updatedAt   DateTime @updatedAt @db.Timestamptz
 
@@ -321,6 +342,7 @@ model LeaveSegment {
   user         User              @relation(fields: [userId], references: [id])
   leaveType    LeaveType         @relation(fields: [leaveTypeId], references: [id])
   segmentDays  LeaveSegmentDay[]
+  decider      User?             @relation("DecidedSegments", fields: [decidedBy], references: [id])
 
   @@index([userId, startDate, endDate])
 }
@@ -348,4 +370,24 @@ model LeaveSegmentDay {
   @@index([userId, date])
   @@index([orgId, date])
   @@index([leaveTypeId, userId, date])
+}
+
+// 15. Notification: In-app notifications for staff and managers
+model Notification {
+  id        String           @id @default(uuid())
+  orgId     String
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  requestId String?
+  readAt    DateTime?        @db.Timestamptz
+  createdAt DateTime         @default(now()) @db.Timestamptz
+
+  organization Organization  @relation(fields: [orgId], references: [id])
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  request      LeaveRequest? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+
+  @@index([userId, readAt, createdAt])
+  @@index([orgId, createdAt])
 }
