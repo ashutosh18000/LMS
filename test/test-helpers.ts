@@ -17,6 +17,31 @@ export async function cleanTestDatabase(prisma: PrismaService): Promise<void> {
   const currentDbUrl = process.env.DATABASE_URL || '';
   const testDbUrl = process.env.TEST_DATABASE_URL || '';
 
+  // Database name allowlist check: Must contain 'test' and never match demo/production databases
+  function getDbName(urlStr: string): string {
+    try {
+      const url = new URL(urlStr);
+      return url.pathname.replace(/^\//, '').split('?')[0];
+    } catch {
+      return '';
+    }
+  }
+
+  function isAllowedTestDb(dbName: string): boolean {
+    if (!dbName || typeof dbName !== 'string') return false;
+    const lower = dbName.toLowerCase().trim();
+    const forbidden = ['neondb', 'postgres', 'master', 'production', 'prod', 'demo'];
+    if (forbidden.includes(lower)) return false;
+    return lower.includes('test');
+  }
+
+  const currentDbName = getDbName(currentDbUrl);
+  if (!isAllowedTestDb(currentDbName)) {
+    throw new Error(
+      `Safety Guard: cleanTestDatabase aborted! Target database "${currentDbName}" is not an allowed test database. Production/demo databases (e.g. "neondb") are strictly forbidden. The database name must contain "test" (e.g. "testdb").`,
+    );
+  }
+
   // Host comparison check
   if (process.env.DATABASE_URL_UNPOOLED) {
     try {

@@ -35,6 +35,16 @@ function getDbName(url) {
   return url.pathname.replace(/^\//, '').split('?')[0];
 }
 
+function isAllowedTestDatabase(dbName) {
+  if (!dbName || typeof dbName !== 'string') return false;
+  const lower = dbName.toLowerCase().trim();
+  const forbiddenNames = ['neondb', 'postgres', 'master', 'production', 'prod', 'demo'];
+  if (forbiddenNames.includes(lower)) {
+    return false;
+  }
+  return lower.includes('test');
+}
+
 const testPoolUrl = parseUrl('TEST_DATABASE_URL');
 const testDirectUrl = parseUrl('TEST_DIRECT_URL', process.env.TEST_DIRECT_URL || process.env.DIRECT_URL);
 
@@ -53,6 +63,13 @@ if (poolEndpointId !== directEndpointId) {
 if (poolDbName !== directDbName) {
   throw new Error(
     `FATAL: Database mismatch! TEST_DATABASE_URL database (${poolDbName}) and DIRECT_URL database (${directDbName}) do not match. Both must target the same database.`
+  );
+}
+
+// 2b. Database name allowlist check: Must contain 'test' and never match demo/production databases
+if (!isAllowedTestDatabase(poolDbName) || !isAllowedTestDatabase(directDbName)) {
+  throw new Error(
+    `FATAL: E2E database name safety check failed! Database name "${poolDbName}" is not an allowed test database. Production/demo databases (e.g. "neondb") are strictly forbidden. The database name must contain "test" (e.g. "testdb").`
   );
 }
 
@@ -97,3 +114,10 @@ if (process.env.TEST_BRANCH_HOST_ALLOWLIST) {
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 process.env.DIRECT_URL = process.env.TEST_DIRECT_URL || testDirectUrl.toString();
 process.env.NODE_ENV = 'test';
+
+module.exports = {
+  isAllowedTestDatabase,
+  parseUrl,
+  getDbName,
+  getEndpointId,
+};
