@@ -122,7 +122,7 @@ model User {
   leaveRequests      LeaveRequest[]         @relation("UserLeaveRequests")
   createdRequests    LeaveRequest[]         @relation("CreatedRequests")
   decidedRequests    LeaveRequest[]         @relation("DecidedRequests")
-  leaveSegments      LeaveSegment[]
+  leaveSegments      LeaveSegment[]         @relation("SegmentOwner")
   leaveSegmentDays   LeaveSegmentDay[]
   auditLogsActor     AuditLog[]             @relation("ActorAuditLogs")
   auditLogsTarget    AuditLog[]             @relation("TargetAuditLogs")
@@ -339,7 +339,7 @@ model LeaveSegment {
 
   request      LeaveRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
   organization Organization      @relation(fields: [orgId], references: [id])
-  user         User              @relation(fields: [userId], references: [id])
+  user         User              @relation("SegmentOwner", fields: [userId], references: [id])
   leaveType    LeaveType         @relation(fields: [leaveTypeId], references: [id])
   segmentDays  LeaveSegmentDay[]
   decider      User?             @relation("DecidedSegments", fields: [decidedBy], references: [id])

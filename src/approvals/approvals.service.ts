@@ -17,6 +17,7 @@ import {
 } from '../notifications/notifications.service';
 import { DateUtil } from '../common/utils/date.util';
 import { canDecide } from '../common/utils/decision-permission.util';
+import { deriveRequestStatus } from '../common/utils/request-status.util';
 import { PaginatedResult } from '../common/dto/pagination.dto';
 import { QueryPendingApprovalsDto } from './dto/query-pending-approvals.dto';
 import { ApproveRequestDto } from './dto/approve-request.dto';
@@ -186,6 +187,7 @@ export class ApprovalsService {
             role: true,
             department: true,
             managerId: true,
+            orgId: true,
           },
         },
         creator: { select: { id: true, name: true, role: true } },
@@ -533,26 +535,15 @@ export class ApprovalsService {
       }
     }
 
-    // Derive request status based on segment decisions
-    let allApproved = true;
-    let allRejected = true;
-    for (const seg of pendingSegments) {
-      const decision = decisionMap.get(seg.id)!;
-      if (decision.action === 'approve') {
-        allRejected = false;
-      } else {
-        allApproved = false;
+    // Derive request status based on all segment statuses (decided pending + existing)
+    const resultingStatuses = request.segments.map((seg) => {
+      const decision = decisionMap.get(seg.id);
+      if (decision) {
+        return decision.action === 'approve' ? SegmentStatus.approved : SegmentStatus.rejected;
       }
-    }
-
-    let derivedStatus: RequestStatus;
-    if (allApproved) {
-      derivedStatus = RequestStatus.approved;
-    } else if (allRejected) {
-      derivedStatus = RequestStatus.rejected;
-    } else {
-      derivedStatus = RequestStatus.partially_approved;
-    }
+      return seg.status;
+    });
+    const derivedStatus = deriveRequestStatus(resultingStatuses);
 
     const result = await this.prisma.$transaction(async (tx) => {
       // 1. Transaction-level advisory lock on requester ID
@@ -646,6 +637,7 @@ export class ApprovalsService {
             reason: segmentComment,
             metadata: {
               requestId: id,
+              requesterId: request.userId,
               segmentId: seg.id,
               action: decision.action,
               comment: segmentComment,
@@ -678,6 +670,7 @@ export class ApprovalsService {
         orgId,
         requestId: id,
         requestStatus: derivedStatus,
+        actorId: callerId,
         requester: {
           id: request.user.id,
           name: request.user.name,

@@ -1062,6 +1062,157 @@
         ]
       }
     },
+    "/notifications": {
+      "get": {
+        "operationId": "NotificationsController_getNotifications",
+        "parameters": [
+          {
+            "name": "unread",
+            "required": false,
+            "in": "query",
+            "description": "Filter only unread notifications",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (default 1)",
+            "schema": {
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page (default 20, max 100)",
+            "schema": {
+              "example": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of user notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedNotificationsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get current user notifications (paginated, ?unread=true)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "operationId": "NotificationsController_getUnreadCount",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Unread notifications count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadCountResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Get count of unread notifications",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "operationId": "NotificationsController_markAsRead",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification marked as read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkReadResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Notification not found"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Mark single notification as read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/notifications/read-all": {
+      "post": {
+        "operationId": "NotificationsController_markAllAsRead",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "All notifications marked as read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkAllReadResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Mark all notifications as read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/leave-types": {
       "post": {
         "operationId": "LeaveTypesController_createLeaveType",
@@ -1437,7 +1588,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Paginated pending approvals"
           }
         },
         "security": [
@@ -1445,6 +1596,7 @@
             "JWT-auth": []
           }
         ],
+        "summary": "List pending leave requests awaiting approval",
         "tags": [
           "Approvals (HR Admin)"
         ]
@@ -1465,7 +1617,10 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "Approval detail and context"
+          },
+          "404": {
+            "description": "Leave request not found"
           }
         },
         "security": [
@@ -1473,6 +1628,62 @@
             "JWT-auth": []
           }
         ],
+        "summary": "Get approval request detail with balances and conflict context",
+        "tags": [
+          "Approvals (HR Admin)"
+        ]
+      }
+    },
+    "/approvals/{id}/decide": {
+      "post": {
+        "operationId": "ApprovalsController_decideRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Incomplete decisions or missing comment for rejected segment"
+          },
+          "403": {
+            "description": "Caller not authorized to decide on this request"
+          },
+          "409": {
+            "description": "Concurrent update or request not in pending state"
+          }
+        },
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ],
+        "summary": "Submit segment-wise decision for all pending segments of a request",
         "tags": [
           "Approvals (HR Admin)"
         ]
@@ -1503,7 +1714,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "Request approved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1511,6 +1729,7 @@
             "JWT-auth": []
           }
         ],
+        "summary": "Shortcut: approve all pending segments of a request",
         "tags": [
           "Approvals (HR Admin)"
         ]
@@ -1541,7 +1760,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "Request rejected successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecideResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -1549,6 +1775,7 @@
             "JWT-auth": []
           }
         ],
+        "summary": "Shortcut: reject all pending segments of a request",
         "tags": [
           "Approvals (HR Admin)"
         ]
@@ -2362,6 +2589,162 @@
         "type": "object",
         "properties": {}
       },
+      "NotificationItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Notification unique ID",
+            "example": "uuid-notification-id"
+          },
+          "type": {
+            "type": "string",
+            "description": "Notification event type",
+            "enum": [
+              "leave_decided",
+              "leave_cancelled"
+            ],
+            "example": "leave_decided"
+          },
+          "title": {
+            "type": "string",
+            "description": "Notification title",
+            "example": "Leave Request Decision: Partially Approved"
+          },
+          "body": {
+            "type": "string",
+            "description": "Notification body text (plain text)",
+            "example": "Your leave request has been decided:\n- WFH (2026-11-25 to 2026-11-25, full): Approved\n- Casual Leave (2026-11-26 to 2026-11-26, full): Rejected. Reason: Team coverage needed"
+          },
+          "requestId": {
+            "type": "object",
+            "description": "Associated leave request ID if applicable",
+            "example": "uuid-request-id",
+            "nullable": true
+          },
+          "readAt": {
+            "type": "object",
+            "description": "Timestamp when notification was read",
+            "example": "2026-11-23T11:00:00.000Z",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Timestamp when notification was created",
+            "example": "2026-11-23T10:45:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "body",
+          "createdAt"
+        ]
+      },
+      "PaginatedNotificationsResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationItemDto"
+            }
+          },
+          "total": {
+            "type": "number",
+            "description": "Total matching notifications count",
+            "example": 12
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page",
+            "example": 20
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 1
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "UnreadCountResponseDto": {
+        "type": "object",
+        "properties": {
+          "unreadCount": {
+            "type": "number",
+            "description": "Number of unread notifications",
+            "example": 3
+          },
+          "count": {
+            "type": "number",
+            "description": "Alias for unreadCount for convenience",
+            "example": 3
+          }
+        },
+        "required": [
+          "unreadCount",
+          "count"
+        ]
+      },
+      "MarkReadResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Success message",
+            "example": "Notification marked as read"
+          },
+          "id": {
+            "type": "string",
+            "description": "Notification ID",
+            "example": "uuid-notification-id"
+          },
+          "readAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Read timestamp",
+            "example": "2026-11-23T11:00:00.000Z"
+          }
+        },
+        "required": [
+          "message",
+          "id",
+          "readAt"
+        ]
+      },
+      "MarkAllReadResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Success message",
+            "example": "All notifications marked as read"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of notifications marked as read",
+            "example": 5
+          }
+        },
+        "required": [
+          "message",
+          "count"
+        ]
+      },
       "CreateLeaveTypeDto": {
         "type": "object",
         "properties": {}
@@ -2378,13 +2761,141 @@
         "type": "object",
         "properties": {}
       },
+      "SegmentDecisionItemDto": {
+        "type": "object",
+        "properties": {
+          "segmentId": {
+            "type": "string",
+            "description": "ID of the segment to decide",
+            "example": "uuid-segment-id"
+          },
+          "action": {
+            "type": "string",
+            "description": "Decision action",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "example": "approve"
+          },
+          "comment": {
+            "type": "string",
+            "description": "Decision comment (required if action is reject, optional if approve)",
+            "example": "Approved based on team coverage"
+          }
+        },
+        "required": [
+          "segmentId",
+          "action"
+        ]
+      },
+      "DecideRequestDto": {
+        "type": "object",
+        "properties": {
+          "decisions": {
+            "description": "List of decisions for all pending segments of the request",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SegmentDecisionItemDto"
+            }
+          }
+        },
+        "required": [
+          "decisions"
+        ]
+      },
+      "DecidedSegmentItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Segment ID",
+            "example": "uuid-segment-id"
+          },
+          "status": {
+            "type": "string",
+            "description": "Updated segment status",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled"
+            ],
+            "example": "approved"
+          },
+          "comment": {
+            "type": "object",
+            "description": "Comment provided for this segment decision",
+            "example": "Approved based on team coverage"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ]
+      },
+      "DecideResponseDto": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Status message of the decision outcome",
+            "example": "Leave request decided successfully"
+          },
+          "id": {
+            "type": "string",
+            "description": "Leave request ID",
+            "example": "uuid-request-id"
+          },
+          "status": {
+            "type": "string",
+            "description": "Derived leave request status",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected",
+              "cancelled",
+              "partially_approved"
+            ],
+            "example": "partially_approved"
+          },
+          "segments": {
+            "description": "List of individual segment decisions",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecidedSegmentItemDto"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "id",
+          "status",
+          "segments"
+        ]
+      },
       "ApproveRequestDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "comment": {
+            "type": "string",
+            "description": "Optional approval comment applied to all pending segments",
+            "example": "Approved"
+          }
+        }
       },
       "RejectRequestDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "comment": {
+            "type": "string",
+            "description": "Mandatory rejection reason applied to all pending segments",
+            "example": "Critical project release scheduled on these dates"
+          }
+        },
+        "required": [
+          "comment"
+        ]
       },
       "CreateOrganizationDto": {
         "type": "object",

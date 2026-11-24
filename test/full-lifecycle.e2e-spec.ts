@@ -55,7 +55,9 @@ describe('Full Enterprise Lifecycle E2E Test', () => {
     await cleanTestDatabase(prisma);
   });
 
-  it('executes complete production lifecycle from platform bootstrap to suspension', async () => {
+  it(
+    'executes complete production lifecycle from platform bootstrap to suspension',
+    async () => {
     // -------------------------------------------------------------------------
     // Step 0: Bootstrap Root Super-Admin in Database
     // -------------------------------------------------------------------------
@@ -515,6 +517,78 @@ describe('Full Enterprise Lifecycle E2E Test', () => {
     expect(staffDashRes.body.upcomingLeaves).toBeDefined();
 
     // -------------------------------------------------------------------------
+    // Step 13B: Partial Approval & In-App Notifications Verification
+    // -------------------------------------------------------------------------
+    // Staff 2 applies for 2 segments: WFH on 17 Nov, Casual on 18 Nov
+    const staff2LeaveRes = await request(app.getHttpServer())
+      .post('/leave-requests')
+      .set('Authorization', `Bearer ${staff2Token}`)
+      .send({
+        reason: 'Dual segment request for WFH and casual leave',
+        segments: [
+          {
+            leaveTypeId: wfhTypeId,
+            startDate: '2026-11-17',
+            endDate: '2026-11-17',
+            portion: 'full',
+          },
+          {
+            leaveTypeId: casualTypeId,
+            startDate: '2026-11-18',
+            endDate: '2026-11-18',
+            portion: 'full',
+          },
+        ],
+      })
+      .expect(201);
+
+    const staff2ReqId = staff2LeaveRes.body.id;
+    const staff2WfhSeg = staff2LeaveRes.body.segments.find((s: any) => s.leaveTypeId === wfhTypeId);
+    const staff2CasualSeg = staff2LeaveRes.body.segments.find((s: any) => s.leaveTypeId === casualTypeId);
+
+    // HR submits partial decision: approve WFH, reject Casual with comment
+    const partialDecideRes = await request(app.getHttpServer())
+      .post(`/approvals/${staff2ReqId}/decide`)
+      .set('Authorization', `Bearer ${hrToken}`)
+      .send({
+        decisions: [
+          {
+            segmentId: staff2WfhSeg.id,
+            action: 'approve',
+            comment: 'WFH approved for remote work',
+          },
+          {
+            segmentId: staff2CasualSeg.id,
+            action: 'reject',
+            comment: 'Casual leave rejected due to client meeting',
+          },
+        ],
+      })
+      .expect(200);
+
+    expect(partialDecideRes.body.status).toBe('partially_approved');
+
+    // Verify Staff 2 receives notification with reject comment
+    const staff2Notifs = await request(app.getHttpServer())
+      .get('/notifications')
+      .set('Authorization', `Bearer ${staff2Token}`)
+      .expect(200);
+
+    expect(staff2Notifs.body.items.length).toBeGreaterThanOrEqual(1);
+    expect(staff2Notifs.body.items[0].body).toContain('Casual leave rejected due to client meeting');
+
+    // Verify Manager receives notification WITHOUT reject comment
+    const managerNotifs = await request(app.getHttpServer())
+      .get('/notifications')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(200);
+
+    expect(managerNotifs.body.items.length).toBeGreaterThanOrEqual(1);
+    const mgrPayload = JSON.stringify(managerNotifs.body);
+    expect(mgrPayload).not.toContain('Casual leave rejected due to client meeting');
+    expect(mgrPayload).not.toContain('decisionComment');
+
+    // -------------------------------------------------------------------------
     // Step 14: Manager Team View (Privacy Shield) & Peer My-Team View
     // -------------------------------------------------------------------------
     const teamAvailRes = await request(app.getHttpServer())
@@ -726,5 +800,5 @@ describe('Full Enterprise Lifecycle E2E Test', () => {
 
     expect([401, 403]).toContain(blockedLogin.status);
     expect(blockedLogin.body.message).toBe('Organization is suspended');
-  });
+  }, 240000);
 });

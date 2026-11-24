@@ -53,8 +53,13 @@ The LMS platform enables organizations to administer leave policies, work schedu
 | **`/leave-requests/:id/cancel`** | Request Owner | Cancel pending leave request before decision | Immediately releases reserved balance. |
 | **`/leave-requests/:id/cancel-approved`** | `hr_admin`, `org_owner` | Cancel previously approved leave with mandatory reason | Automatically refunds balance from used. |
 | **`/approvals/pending`** | `hr_admin`, `org_owner` | Inbox of pending leave requests awaiting approval | HR cannot decide their own leave requests. |
-| **`/approvals/:id/approve`** | `hr_admin`, `org_owner` | Final approval decision | Commits balance from pending to used. |
-| **`/approvals/:id/reject`** | `hr_admin`, `org_owner` | Rejection decision | Releases reserved balance back to available. |
+| **`/approvals/:id/decide`** | `hr_admin`, `org_owner` | Atomic segment-wise decision (approve/reject per segment) | All pending segments must be decided in single submit. Rejection requires comment. |
+| **`/approvals/:id/approve`** | `hr_admin`, `org_owner` | Shortcut: approve all pending segments | Commits balance from pending to used. |
+| **`/approvals/:id/reject`** | `hr_admin`, `org_owner` | Shortcut: reject all pending segments | Releases reserved balance back to available (comment mandatory). |
+| **`/notifications`** | All Logged-in Tenant Users | In-app notifications inbox with pagination (`?unread=true`) | Scoped strictly to caller's userId and orgId. |
+| **`/notifications/unread-count`** | All Logged-in Tenant Users | Real-time count of unread in-app notifications | Instant query for badges and alerts. |
+| **`/notifications/:id/read`** | All Logged-in Tenant Users | Mark single notification as read | Caller ownership verified. |
+| **`/notifications/read-all`** | All Logged-in Tenant Users | Mark all unread notifications of caller as read | Bulk read confirmation. |
 | **`/team/availability`** | `manager` | Range availability of direct reports with `offDates`, `halfDates`, and `holidays` | Strictly redacts leave types, reasons, balances. |
 | **`/team/availability/today`** | `manager` | Real-time single-day status (`off`, `leave`, `wfh`, `available`) with `halfDay` flag | Single-counting invariant guaranteed. |
 | **`/my-team/availability`** | All Logged-in Tenant Users | Peer & manager availability view for team coordination | Same privacy shield as manager view. |
@@ -1350,47 +1355,78 @@ Retrieves full details of a pending request along with complete decision context
   }
   ```
 
-#### 3. `POST /approvals/:id/approve`
-Approves a pending leave request atomically under requester advisory lock.
-- Transitions status to `approved`, stamps `decidedBy`, `decidedAt`, and optional `decisionComment`.
-- Atomically commits balance from `pending` to `used` via `BalancesService.commit`.
-- Emits `LEAVE_APPROVED` audit log entry with `requestId`, `requesterId`, and `countedDays`.
-- If request is not in `pending` status (already decided or cancelled), returns HTTP 409 Conflict.
+#### 3. `POST /approvals/:id/decide`
+Submits atomic segment-wise approval/rejection decisions for **all pending segments** in a single transaction.
+- **Business Rules**:
+  - HR can approve or reject each segment individually (e.g. approve WFH segment, reject Casual Leave segment). No sub-segment partial day splitting within a continuous segment.
+  - HR must submit decisions for **all pending segments** of the request in a single request (all-or-nothing atomic transaction). If any pending segment is omitted, HTTP 400 Bad Request is returned listing the missing segment IDs.
+  - Rejection requires a mandatory non-empty comment (`comment`). For approved segments, `comment` is optional.
+  - Decision is final: a rejected segment cannot be re-approved; staff must submit a new request if needed.
+  - Permission rules (`canDecide`) apply: callers cannot decide their own requests, and HR Admin requests require Org Owner decision.
+- **Status Derivation**:
+  - All segments approved → Request status `approved`
+  - All segments rejected → Request status `rejected`
+  - Mix of approved and rejected segments → Request status `partially_approved`
+- **Balance & Occupancy Handling**:
+  - Approved segments with `deductsBalance = true`: commits balance from `pending` to `used`.
+  - Rejected segments with `deductsBalance = true`: releases balance from `pending` back to available.
+  - WFH segments (`deductsBalance = false`): balance is untouched.
+  - Days belonging to rejected segments have `occupancy` set to 0, immediately releasing dates from overlaps and availability calendars.
+- **Concurrency & Races**:
+  - Protected by requester PostgreSQL transaction advisory lock (`pg_advisory_xact_lock(hashtextextended('leave:' || userId, 0::bigint))`).
+  - Request and segment updates check `WHERE status = 'pending'`. If concurrent decision or cancellation occurred, HTTP 409 Conflict is returned.
+- **Audit & Notifications**:
+  - Distinct audit log entry per decided segment (`LEAVE_APPROVED` or `LEAVE_REJECTED`) containing `requestId`, `segmentId`, `requesterId`, `action`, `comment`, and `countedDays`.
+  - Generates in-app notifications for staff (with reject comments) and manager (without comments or sensitive fields).
+
 - **Request Body**:
   ```json
   {
-    "comment": "Approved. Have a good break!"
-  }
-  ```
-- **Response (`200 OK`)**:
-  ```json
-  {
-    "message": "Leave request approved successfully",
-    "requestId": "7bfa602a-3507-4e31-8f67-a2f0c1110b91",
-    "status": "approved"
+    "decisions": [
+      {
+        "segmentId": "99f8d5cf-61e8-4669-95e2-2252a17be1f0",
+        "action": "approve",
+        "comment": "WFH approved based on coverage"
+      },
+      {
+        "segmentId": "a1b2c3d4-11e8-4669-95e2-2252a17be2e1",
+        "action": "reject",
+        "comment": "Release sprint scheduled on these dates"
+      }
+    ]
   }
   ```
 
-#### 4. `POST /approvals/:id/reject`
-Rejects a pending leave request with a mandatory comment.
-- Transitions status to `rejected`, stamps `decidedBy`, `decidedAt`, and mandatory `decisionComment`.
-- Atomically releases reserved balance via `BalancesService.release` (`pending -> available`).
-- Emits `LEAVE_REJECTED` audit log entry with `requestId`, `requesterId`, and `countedDays`.
-- Frees dates so requester can re-apply. Once rejected, request is final (no override).
-- **Request Body**:
-  ```json
-  {
-    "comment": "Team has high release workload during this sprint."
-  }
-  ```
 - **Response (`200 OK`)**:
   ```json
   {
-    "message": "Leave request rejected successfully",
-    "requestId": "7bfa602a-3507-4e31-8f67-a2f0c1110b91",
-    "status": "rejected"
+    "message": "Leave request decided successfully",
+    "id": "7bfa602a-3507-4e31-8f67-a2f0c1110b91",
+    "status": "partially_approved",
+    "segments": [
+      {
+        "id": "99f8d5cf-61e8-4669-95e2-2252a17be1f0",
+        "status": "approved",
+        "comment": "WFH approved based on coverage"
+      },
+      {
+        "id": "a1b2c3d4-11e8-4669-95e2-2252a17be2e1",
+        "status": "rejected",
+        "comment": "Release sprint scheduled on these dates"
+      }
+    ]
   }
   ```
+
+#### 4. `POST /approvals/:id/approve` (Shortcut)
+Shortcut that delegates internally to `decideRequest`, automatically marking all pending segments of the request as `approve`.
+- Optional `comment` applied to all pending segments.
+- Atomically commits balance from `pending` to `used`.
+
+#### 5. `POST /approvals/:id/reject` (Shortcut)
+Shortcut that delegates internally to `decideRequest`, automatically marking all pending segments of the request as `reject`.
+- Mandatory `comment` applied as the rejection reason.
+- Atomically releases reserved balance back to available.
 
 ---
 
@@ -2093,6 +2129,37 @@ docker run -d \
 
 ---
 
+## 🔔 In-App Notifications & Privacy Shield
+
+### Overview
+The LMS backend includes an in-app notifications system delivering real-time plain text alerts for leave decision outcomes and cancellations, paired with strict manager and peer privacy redaction rules.
+
+### Endpoints (`/notifications`)
+| Endpoint | Method | Role | Description |
+|---|---|---|---|
+| `/notifications` | `GET` | Authenticated | Paginated user notifications with optional `?unread=true` filter |
+| `/notifications/unread-count` | `GET` | Authenticated | Real-time count of unread notifications for badge counters |
+| `/notifications/:id/read` | `PATCH` | Authenticated | Mark a single notification as read |
+| `/notifications/read-all` | `POST` | Authenticated | Mark all notifications of caller as read |
+
+### Notification Generation Triggers
+1. **Segment Decision Outcome**:
+   - **To Staff**: Single atomic summary notification detailing all decided segments (kind, dates, portion, status) and including HR rejection comments.
+   - **To Staff's Manager**: Summary notification with member name, dates, kind (`leave` or `wfh`), and decision status. **Strict Privacy**: HR rejection comments, staff personal reasons, leave type names, and balance quotas are strictly redacted.
+2. **HR Admin Request Decided by Org Owner**:
+   - HR Admin receives decision summary with rejection comments.
+   - HR Admin's manager receives result only (comments redacted).
+3. **Cancellation Events**:
+   - Staff cancellation of pending requests: Staff and manager notified.
+   - HR Admin cancellation of approved leaves: Staff and manager notified.
+
+### Privacy Rules Enforcement
+- **Decision Comments (`decisionComment`)**: Visible only to the requester (`/leave-requests/:id`, `/leave-requests/mine`, notifications) and deciding HR Admins / Org Owner (`/approvals/*`, `/leave-requests`). Managers and peers can **never** view decision comments.
+- **Manager Visibility**: Managers viewing `/team/availability`, `/my-team/availability`, `/dashboard/team`, and manager notifications only see: who, dates, portion, kind (`leave` or `wfh`), and status. Personal reasons, leave type names, quota balances, decider identity, and comments are blocked across all responses.
+- **Tenant & User Isolation**: Notification queries are strictly bound to `WHERE userId = caller.id AND orgId = caller.orgId`. Cross-tenant or cross-user access attempts return 404.
+
+---
+
 ## 📘 Operations & Incident Runbook
 
 ### Runbook 1: Initial Platform Root Super-Administrator Seeding
@@ -2176,6 +2243,6 @@ If a tenant organization owner is locked out or forgets their credentials:
 
 ### Runbook 6: Known Limitations & Phase 2 Roadmap
 - **No Bulk CSV Employee Import**: Employee creation is currently performed via `POST /users` (single record). Bulk CSV onboarding is slated for Phase 2.
-- **No Outgoing Notifications**: Status changes and pending approvals are currently surfaced via `/dashboard/me`, `/dashboard/hr`, and `/approvals/pending`. Email (SendGrid/SES) and Slack webhooks are scheduled for Phase 2.
-- **No Partial-Day Sub-Segment Approval**: Leave requests are approved or rejected in their entirety. Splitting or partially approving individual segments is planned for Phase 2.
+- **In-App Notifications Implemented (Email/Slack in Phase 2)**: Real-time in-app notifications are active for leave decisions and cancellations (`/notifications`). Outgoing SMTP/SES email delivery and Slack webhooks are slated for Phase 2.
+- **Segment-Wise Approvals Active**: Full atomic segment-wise approval and rejection is implemented (`POST /approvals/:requestId/decide`). Intra-segment sub-portion splitting remains disallowed by design (segments are atomic continuous units).
 - **Break-Glass Emergency Elevation**: Root super-admin cannot act inside tenant organizations directly (`OrgScopeGuard` prevents cross-boundary pollution). Break-glass access requires owner password reset or temporary owner replacement.

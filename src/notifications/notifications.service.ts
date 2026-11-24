@@ -24,6 +24,7 @@ export interface DecisionNotificationInput {
   orgId: string;
   requestId: string;
   requestStatus: RequestStatus;
+  actorId?: string;
   requester: {
     id: string;
     name: string;
@@ -36,6 +37,7 @@ export interface CancellationNotificationInput {
   orgId: string;
   requestId: string;
   cancelledBy: 'staff' | 'hr';
+  actorId?: string;
   requester: {
     id: string;
     name: string;
@@ -166,57 +168,62 @@ export class NotificationsService {
   }
 
   /**
-   * Creates notifications for a leave decision within a database transaction.
+   * Creates notifications for a leave decision within a database transaction using createMany.
    * Generates:
-   * 1. Staff notification (detailed with HR comments on rejection).
-   * 2. Manager notification (sanitized: NO decision comment, NO leave type name, NO staff reason, NO balance).
+   * 1. Staff notification (detailed with HR comments on rejection), unless staff was the actor.
+   * 2. Manager notification (sanitized: NO decision comment, NO leave type name, NO staff reason, NO balance), unless manager was the actor.
    */
   async createDecisionNotifications(
     tx: Prisma.TransactionClient,
     input: DecisionNotificationInput,
   ): Promise<void> {
-    const { orgId, requestId, requestStatus, requester, segments } = input;
+    const { orgId, requestId, requestStatus, actorId, requester, segments } = input;
+    const notificationsToInsert: Prisma.NotificationCreateManyInput[] = [];
 
     // 1. Staff Notification (Staff gets summary with segment-level decision comments)
-    let staffStatusLabel = 'Decided';
-    if (requestStatus === RequestStatus.approved) staffStatusLabel = 'Approved';
-    else if (requestStatus === RequestStatus.rejected) staffStatusLabel = 'Rejected';
-    else if (requestStatus === RequestStatus.partially_approved) staffStatusLabel = 'Partially Approved';
+    if (!actorId || actorId !== requester.id) {
+      let staffStatusLabel = 'Decided';
+      if (requestStatus === RequestStatus.approved) staffStatusLabel = 'Approved';
+      else if (requestStatus === RequestStatus.rejected) staffStatusLabel = 'Rejected';
+      else if (requestStatus === RequestStatus.partially_approved) staffStatusLabel = 'Partially Approved';
 
-    const staffTitle = `Leave Request Decision: ${staffStatusLabel}`;
+      const staffTitle = `Leave Request Decision: ${staffStatusLabel}`;
 
-    const staffLines: string[] = [
-      `Your leave request has been ${staffStatusLabel.toLowerCase()}. Details by segment:`,
-    ];
+      const staffLines: string[] = [
+        `Your leave request has been ${staffStatusLabel.toLowerCase()}. Details by segment:`,
+      ];
 
-    for (const seg of segments) {
-      const kind = seg.isWfh ? 'WFH' : 'Leave';
-      const startStr = typeof seg.startDate === 'string' ? seg.startDate : DateUtil.format(seg.startDate);
-      const endStr = typeof seg.endDate === 'string' ? seg.endDate : DateUtil.format(seg.endDate);
-      const portionStr = seg.portion === Portion.full ? 'Full Day' : seg.portion === Portion.first_half ? 'First Half' : 'Second Half';
-      const decisionStr = seg.status === SegmentStatus.approved ? 'Approved' : 'Rejected';
+      for (const seg of segments) {
+        const kind = seg.isWfh ? 'WFH' : 'Leave';
+        const startStr = typeof seg.startDate === 'string' ? seg.startDate : DateUtil.format(seg.startDate);
+        const endStr = typeof seg.endDate === 'string' ? seg.endDate : DateUtil.format(seg.endDate);
+        const portionStr = seg.portion === Portion.full ? 'Full Day' : seg.portion === Portion.first_half ? 'First Half' : 'Second Half';
+        const decisionStr = seg.status === SegmentStatus.approved ? 'Approved' : 'Rejected';
 
-      let line = `- ${kind} (${startStr} to ${endStr}, ${portionStr}): ${decisionStr}`;
-      if (seg.status === SegmentStatus.rejected && seg.comment) {
-        line += `. Reason: ${seg.comment}`;
+        let line = `- ${kind} (${startStr} to ${endStr}, ${portionStr}): ${decisionStr}`;
+        if (seg.status === SegmentStatus.rejected && seg.comment) {
+          line += `. Reason: ${seg.comment}`;
+        }
+        staffLines.push(line);
       }
-      staffLines.push(line);
-    }
 
-    await tx.notification.create({
-      data: {
+      notificationsToInsert.push({
         orgId,
         userId: requester.id,
         type: NotificationType.leave_decided,
         title: staffTitle,
         body: staffLines.join('\n'),
         requestId,
-      },
-    });
+      });
+    }
 
-    // 2. Manager Notification (if managerId is present)
+    // 2. Manager Notification (if managerId is present and manager is not the actor)
     // CRITICAL PRIVACY: Manager NEVER receives decisionComment, reason, leave type name, or balance.
-    if (requester.managerId && requester.managerId !== requester.id) {
+    if (
+      requester.managerId &&
+      requester.managerId !== requester.id &&
+      (!actorId || actorId !== requester.managerId)
+    ) {
       const managerTitle = `Team Member Leave Decision: ${requester.name}`;
       const managerLines: string[] = [
         `Leave decision for ${requester.name}:`,
@@ -233,60 +240,72 @@ export class NotificationsService {
         managerLines.push(`- ${kind} (${startStr} to ${endStr}, ${portionStr}): ${decisionStr}`);
       }
 
-      await tx.notification.create({
-        data: {
-          orgId,
-          userId: requester.managerId,
-          type: NotificationType.leave_decided,
-          title: managerTitle,
-          body: managerLines.join('\n'),
-          requestId,
-        },
+      notificationsToInsert.push({
+        orgId,
+        userId: requester.managerId,
+        type: NotificationType.leave_decided,
+        title: managerTitle,
+        body: managerLines.join('\n'),
+        requestId,
+      });
+    }
+
+    if (notificationsToInsert.length > 0) {
+      await tx.notification.createMany({
+        data: notificationsToInsert,
       });
     }
   }
 
   /**
-   * Creates notifications when a leave request is cancelled (by staff or by HR cancel-approved).
+   * Creates notifications when a leave request is cancelled (by staff or by HR cancel-approved) using createMany.
+   * If user cancels their own request, no notification is sent to themself (only to manager).
    */
   async createCancellationNotifications(
     tx: Prisma.TransactionClient,
     input: CancellationNotificationInput,
   ): Promise<void> {
-    const { orgId, requestId, cancelledBy, requester, segments } = input;
+    const { orgId, requestId, cancelledBy, actorId, requester, segments } = input;
+    const notificationsToInsert: Prisma.NotificationCreateManyInput[] = [];
 
-    // 1. Staff Notification
-    const staffTitle = cancelledBy === 'hr'
-      ? 'Approved Leave Request Cancelled by HR'
-      : 'Leave Request Cancelled';
+    // 1. Staff Notification:
+    // Only sent if staff is NOT the actor who cancelled the request (e.g. HR cancelled an approved request)
+    const isSelfAction = cancelledBy === 'staff' || (actorId && actorId === requester.id);
+    if (!isSelfAction) {
+      const staffTitle = cancelledBy === 'hr'
+        ? 'Approved Leave Request Cancelled by HR'
+        : 'Leave Request Cancelled';
 
-    const staffLines: string[] = [
-      cancelledBy === 'hr'
-        ? 'Your approved leave request has been cancelled by HR. Any deducted leave balance has been refunded.'
-        : 'Your leave request has been cancelled.',
-    ];
+      const staffLines: string[] = [
+        cancelledBy === 'hr'
+          ? 'Your approved leave request has been cancelled by HR. Any deducted leave balance has been refunded.'
+          : 'Your leave request has been cancelled.',
+      ];
 
-    for (const seg of segments) {
-      const kind = seg.isWfh ? 'WFH' : 'Leave';
-      const startStr = typeof seg.startDate === 'string' ? seg.startDate : DateUtil.format(seg.startDate);
-      const endStr = typeof seg.endDate === 'string' ? seg.endDate : DateUtil.format(seg.endDate);
-      const portionStr = seg.portion === Portion.full ? 'Full Day' : seg.portion === Portion.first_half ? 'First Half' : 'Second Half';
-      staffLines.push(`- ${kind} (${startStr} to ${endStr}, ${portionStr})`);
-    }
+      for (const seg of segments) {
+        const kind = seg.isWfh ? 'WFH' : 'Leave';
+        const startStr = typeof seg.startDate === 'string' ? seg.startDate : DateUtil.format(seg.startDate);
+        const endStr = typeof seg.endDate === 'string' ? seg.endDate : DateUtil.format(seg.endDate);
+        const portionStr = seg.portion === Portion.full ? 'Full Day' : seg.portion === Portion.first_half ? 'First Half' : 'Second Half';
+        staffLines.push(`- ${kind} (${startStr} to ${endStr}, ${portionStr})`);
+      }
 
-    await tx.notification.create({
-      data: {
+      notificationsToInsert.push({
         orgId,
         userId: requester.id,
         type: NotificationType.leave_cancelled,
         title: staffTitle,
         body: staffLines.join('\n'),
         requestId,
-      },
-    });
+      });
+    }
 
-    // 2. Manager Notification (if managerId is present)
-    if (requester.managerId && requester.managerId !== requester.id) {
+    // 2. Manager Notification (if managerId is present and manager is not the actor)
+    if (
+      requester.managerId &&
+      requester.managerId !== requester.id &&
+      (!actorId || actorId !== requester.managerId)
+    ) {
       const managerTitle = `Team Member Leave Cancelled: ${requester.name}`;
       const managerLines: string[] = [
         `Leave for ${requester.name} has been cancelled:`,
@@ -300,15 +319,19 @@ export class NotificationsService {
         managerLines.push(`- ${kind} (${startStr} to ${endStr}, ${portionStr})`);
       }
 
-      await tx.notification.create({
-        data: {
-          orgId,
-          userId: requester.managerId,
-          type: NotificationType.leave_cancelled,
-          title: managerTitle,
-          body: managerLines.join('\n'),
-          requestId,
-        },
+      notificationsToInsert.push({
+        orgId,
+        userId: requester.managerId,
+        type: NotificationType.leave_cancelled,
+        title: managerTitle,
+        body: managerLines.join('\n'),
+        requestId,
+      });
+    }
+
+    if (notificationsToInsert.length > 0) {
+      await tx.notification.createMany({
+        data: notificationsToInsert,
       });
     }
   }
