@@ -792,9 +792,12 @@ export class BalancesService {
       for (const lt of eligibleTypes) {
         const key = `${user.id}_${lt.id}`;
         if (!toMap.has(key)) {
-          throw new ConflictException(
-            'Pehle toYear ki allocation chalao: One or more eligible employees are missing balance rows for toYear',
-          );
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'TO_YEAR_ALLOCATION_MISSING',
+            message:
+              'Please run allocation for toYear first: One or more eligible employees are missing balance rows for toYear',
+          });
         }
       }
     }

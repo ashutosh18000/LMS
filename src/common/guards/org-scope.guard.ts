@@ -31,7 +31,11 @@ export class OrgScopeGuard implements CanActivate {
         path.startsWith('/health/');
 
       if (!isAllowedForRoot) {
-        throw new ForbiddenException('Root org ke andar kaam nahi karta');
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'ROOT_ORG_CONTEXT_FORBIDDEN',
+          message: 'Root user cannot perform actions within an organization context',
+        });
       }
       return true;
     }

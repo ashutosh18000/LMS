@@ -945,7 +945,7 @@ The Leave Request Engine handles atomic validation, breakdown calculation, balan
 ### Key Rules & Behaviors
 - **Advisory Lock Concurrency**: Submissions acquire a transaction-scoped PostgreSQL advisory lock (`pg_advisory_xact_lock(hashtextextended('leave:' || userId, 0::bigint))`), cleanly serializing concurrent submissions per user without race conditions.
 - **Calendar Date Integrity**: Dates are parsed and formatted as ISO plain calendar dates (`"YYYY-MM-DD"`) in UTC without timezone displacement.
-- **Role Restrictions**: Accessible to `staff`, `manager`, and `hr_admin`. `org_owner` and `root` receive 403 (`"Owner leave apply nahi karta"`).
+- **Role Restrictions**: Accessible to `staff`, `manager`, and `hr_admin`. `org_owner` and `root` receive 403 (`"Organization owners cannot apply for leave"`).
 - **Validation Codes**: Returns `{ statusCode, code, message, details }` with codes: `INVALID_SEGMENT`, `LEAVE_TYPE_INACTIVE`, `HALF_DAY_NOT_ALLOWED`, `ZERO_COUNTED_DAYS`, `BACKDATE_NOT_ALLOWED`, `MIN_NOTICE`, `OVERLAP`, `NO_BALANCE`, `INSUFFICIENT_BALANCE`, `MONTHLY_LIMIT_EXCEEDED`.
 - **Hybrid Requests**: A single request can mix multiple segments across different leave types (e.g., Casual Leave and WFH) in one atomic transaction.
 
@@ -1210,7 +1210,7 @@ When a submitted segment collides with an existing active request (pending or ap
   {
     "statusCode": 409,
     "code": "OVERLAP",
-    "message": "2026-11-05 se 2026-11-06 pehle se doosri request mein hai. Aap 2026-11-07 se apply kar sakte ho.",
+    "message": "Selected dates (2026-11-05 to 2026-11-06) overlap with an existing request. You can apply from 2026-11-07 onwards.",
     "details": {
       "conflicts": [
         {
@@ -1541,7 +1541,8 @@ When a user is deactivated (via `PATCH /users/:id/deactivate` or `PATCH /org/hr-
   ```json
   {
     "statusCode": 403,
-    "message": "Root org ke andar kaam nahi karta",
+    "code": "ROOT_ORG_CONTEXT_FORBIDDEN",
+    "message": "Root user cannot perform actions within an organization context",
     "error": "Forbidden"
   }
   ```
@@ -2061,7 +2062,7 @@ npm run test:e2e
   - Strict privacy deep-scan (zero leak of templates, rules, reasons, or balances)
   - `/my-team/availability` and `/dashboard/team` day-type alignment
 - `test/views-reports-dashboards.e2e-spec.ts` (17 tests passed):
-  - `OrgScopeGuard` enforcement: root access to `/platform/*`, `/auth/*`, `/health` allowed; org routes blocked with 403 (`"Root org ke andar kaam nahi karta"`); non-root blocked from `/platform/*` (403)
+  - `OrgScopeGuard` enforcement: root access to `/platform/*`, `/auth/*`, `/health` allowed; org routes blocked with 403 (`"Root user cannot perform actions within an organization context"`); non-root blocked from `/platform/*` (403)
   - Deep privacy & allowed keys scan on `/team` and `/my-team`: strictly no leakage of reason, leaveTypeId, leave type name, balance, or requestId
   - `GET /team/availability` & `today`: direct reports only, deactivated excluded, unapproved excluded, clipped ranges, half-day portion, single-counting
   - `GET /my-team/availability` & `today`: peers + manager for staff (including manager approved leaves), direct reports for manager, empty for unassigned staff, 92 days max range (400)

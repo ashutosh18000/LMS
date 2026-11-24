@@ -503,7 +503,8 @@ describe('Platform (Root) & Org (Owner) Modules E2E', () => {
         .send({})
         .expect(409);
 
-      expect(lastHrConflictRes.body.message).toBe('Aakhri active hr_admin hai, confirm karein');
+      expect(lastHrConflictRes.body.code).toBe('LAST_ACTIVE_HR_ADMIN_CONFIRMATION_REQUIRED');
+      expect(lastHrConflictRes.body.message).toBe('Last active HR admin, confirmation required');
 
       // Deactivating WITH confirmLastHr: true must succeed
       await request(app.getHttpServer())

@@ -125,7 +125,7 @@ export class LeaveRequestsService {
       throw new LeaveRequestException(
         HttpStatus.BAD_REQUEST,
         'ORGANIZATION_NOT_FOUND',
-        'Organization maujood nahi hai',
+        'Organization not found',
       );
     }
 
@@ -133,7 +133,7 @@ export class LeaveRequestsService {
       throw new LeaveRequestException(
         HttpStatus.BAD_REQUEST,
         'LEAVE_TYPE_INACTIVE',
-        'Yeh leave type active nahi hai ya doosri organization ka hai',
+        'Leave type is inactive or belongs to another organization',
       );
     }
 
@@ -145,7 +145,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'INVALID_SEGMENT',
-          `Segment ki startDate (${seg.startDate}) endDate (${seg.endDate}) se baad nahi ho sakti`,
+          `Segment start date (${seg.startDate}) cannot be after end date (${seg.endDate})`,
         );
       }
 
@@ -153,7 +153,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'INVALID_SEGMENT',
-          'Ek segment zyada se zyada 366 din ka ho sakta hai',
+          'A segment cannot exceed 366 days',
         );
       }
 
@@ -164,7 +164,7 @@ export class LeaveRequestsService {
           throw new LeaveRequestException(
             HttpStatus.BAD_REQUEST,
             'HALF_DAY_NOT_ALLOWED',
-            'Half day sirf ek din (startDate == endDate) ke liye aur halfDayAllowed leave types par hi allowed hai',
+            'Half-day is only allowed for single-day segments (startDate == endDate) on half-day permitted leave types',
           );
         }
       }
@@ -242,7 +242,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'ZERO_COUNTED_DAYS',
-          `Is segment (${seg.startDate} se ${seg.endDate}) mein koi working day nahi hai`,
+          `Selected date range (${seg.startDate} to ${seg.endDate}) contains zero working days`,
         );
       }
 
@@ -266,7 +266,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'BACKDATE_NOT_ALLOWED',
-          `Backdated leave allowed limit (${org.backdateAllowedDays} din) se zyada purani hai. Kripya HR se on-behalf apply karwayein.`,
+          `Backdated leave exceeds the allowed limit (${org.backdateAllowedDays} days). Please contact HR to apply on your behalf.`,
         );
       }
 
@@ -277,7 +277,7 @@ export class LeaveRequestsService {
           throw new LeaveRequestException(
             HttpStatus.BAD_REQUEST,
             'MIN_NOTICE',
-            `${lt.name} ke liye kam se kam ${lt.minNoticeDays} din pehle apply karna zaroori hai`,
+            `${lt.name} requires at least ${lt.minNoticeDays} days advance notice`,
           );
         }
       }
@@ -311,7 +311,7 @@ export class LeaveRequestsService {
           throw new LeaveRequestException(
             HttpStatus.CONFLICT,
             'OVERLAP',
-            `Ek hi request ke segments date ${dateStr} par aapas mein takra rahe hain. Aap ${nextFreeDate} se apply kar sakte ho.`,
+            `Segments within the same request overlap on date ${dateStr}. You can apply from ${nextFreeDate} onwards.`,
             {
               conflicts: [
                 {
@@ -508,12 +508,12 @@ export class LeaveRequestsService {
     const dateRange =
       sortedConflicts.length === 1
         ? sortedConflicts[0]
-        : `${sortedConflicts[0]} se ${sortedConflicts[sortedConflicts.length - 1]}`;
+        : `${sortedConflicts[0]} to ${sortedConflicts[sortedConflicts.length - 1]}`;
 
     throw new LeaveRequestException(
       HttpStatus.CONFLICT,
       'OVERLAP',
-      `${dateRange} pehle se doosri request mein hai. Aap ${nextFreeDate} se apply kar sakte ho.`,
+      `Selected dates (${dateRange}) overlap with an existing request. You can apply from ${nextFreeDate} onwards.`,
       {
         conflicts: Array.from(conflictMap.values()),
         nextFreeDate,
@@ -566,7 +566,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'MONTHLY_LIMIT_EXCEEDED',
-          `${type.name} ka monthly limit (${limit} din) exceed ho raha hai mahine ${month} mein`,
+          `Monthly limit for ${type.name} (${limit} days) exceeded in month ${month}`,
           {
             leaveTypeId: typeId,
             month,
@@ -605,7 +605,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'NO_BALANCE',
-          `Saal ${year} ke liye ${type.name} ka balance allocate nahi hua hai. HR se allocation karwayein.`,
+          `No leave balance allocated for ${type.name} in year ${year}. Please contact HR.`,
         );
       }
 
@@ -615,7 +615,7 @@ export class LeaveRequestsService {
         throw new LeaveRequestException(
           HttpStatus.BAD_REQUEST,
           'INSUFFICIENT_BALANCE',
-          `Saal ${year} mein ${type.name} ka balance kam hai. Chahiye: ${needed}, bacha hai: ${available}`,
+          `Insufficient balance for ${type.name} in year ${year}. Required: ${needed}, available: ${available}`,
           {
             leaveTypeId,
             typeName: type.name,
@@ -839,7 +839,11 @@ export class LeaveRequestsService {
     dto: CreateLeaveRequestDto,
   ) {
     if (role === Role.org_owner || role === Role.root) {
-      throw new ForbiddenException('Owner leave apply nahi karta');
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'OWNER_CANNOT_APPLY_LEAVE',
+        message: 'Organization owners cannot apply for leave',
+      });
     }
 
     const prepared = await this.processAndValidateRequest(userId, orgId, dto);
@@ -869,7 +873,11 @@ export class LeaveRequestsService {
     dto: CreateLeaveRequestDto,
   ) {
     if (role === Role.org_owner || role === Role.root) {
-      throw new ForbiddenException('Owner leave apply nahi karta');
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'OWNER_CANNOT_APPLY_LEAVE',
+        message: 'Organization owners cannot apply for leave',
+      });
     }
 
     const prepared = await this.processAndValidateRequest(userId, orgId, dto);
@@ -1128,7 +1136,7 @@ export class LeaveRequestsService {
       throw new LeaveRequestException(
         HttpStatus.CONFLICT,
         'CANNOT_CANCEL_REQUEST',
-        `Sirf pending request cancel ho sakti hai. Current status: ${request.status}`,
+        `Only pending requests can be cancelled. Current status: ${request.status}`,
       );
     }
 
@@ -1219,7 +1227,11 @@ export class LeaveRequestsService {
     dto: CreateOnBehalfDto,
   ) {
     if (callerId === dto.userId) {
-      throw new ForbiddenException('Apne liye on-behalf apply nahi kar sakte');
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'CANNOT_APPLY_FOR_SELF',
+        message: 'Cannot apply on behalf of yourself',
+      });
     }
 
     const targetUser = await this.prisma.user.findFirst({
@@ -1231,7 +1243,11 @@ export class LeaveRequestsService {
     });
 
     if (!targetUser) {
-      throw new NotFoundException('Target user not found or inactive in this organization');
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'TARGET_USER_NOT_FOUND',
+        message: 'Target user not found or inactive in this organization',
+      });
     }
 
     if (
@@ -1239,16 +1255,20 @@ export class LeaveRequestsService {
       targetUser.role !== Role.manager &&
       targetUser.role !== Role.hr_admin
     ) {
-      throw new BadRequestException(
-        'On-behalf sirf staff, manager ya hr_admin ke liye apply ho sakti hai',
-      );
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'INVALID_ON_BEHALF_TARGET',
+        message: 'On-behalf leave can only be applied for staff, manager, or HR admin',
+      });
     }
 
     // canDecide rule: if target is hr_admin, caller MUST be org_owner
     if (!canDecide({ id: callerId, role: callerRole, orgId }, targetUser)) {
-      throw new ForbiddenException(
-        'HR Admin ke liye on-behalf sirf Org Owner apply kar sakta hai',
-      );
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'CANNOT_APPLY_FOR_HR',
+        message: 'Only Organization Owner can apply on-behalf for HR Admin',
+      });
     }
 
     const autoApprove = dto.autoApprove ?? true;
@@ -1326,16 +1346,22 @@ export class LeaveRequestsService {
 
     // Check canDecide rule
     if (!canDecide({ id: callerId, role: callerRole, orgId }, request.user)) {
-      throw new ForbiddenException('Aap is approved leave ko cancel nahi kar sakte');
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'NOT_AUTHORIZED_TO_CANCEL',
+        message: 'You are not authorized to cancel this approved leave',
+      });
     }
 
     if (
       request.status !== RequestStatus.approved &&
       request.status !== RequestStatus.partially_approved
     ) {
-      throw new ConflictException(
-        `Sirf approved ya partially approved request cancel ho sakti hai. Current status: ${request.status}`,
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'ONLY_APPROVED_CAN_BE_CANCELLED',
+        message: `Only approved or partially approved requests can be cancelled. Current status: ${request.status}`,
+      });
     }
 
     const approvedSegments = request.segments.filter(

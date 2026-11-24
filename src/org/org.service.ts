@@ -101,9 +101,11 @@ export class OrgService {
         where: { orgId },
       });
       if (balanceCount > 0) {
-        throw new ConflictException(
-          'Balances maujood hain, financial year start nahi badal sakte',
-        );
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'FINANCIAL_YEAR_BALANCES_EXIST',
+          message: 'Cannot change financial year start month while balances exist',
+        });
       }
     }
 
@@ -388,9 +390,11 @@ export class OrgService {
     });
 
     if (activeHrCount <= 1 && dto?.confirmLastHr !== true) {
-      throw new ConflictException(
-        'Aakhri active hr_admin hai, confirm karein',
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'LAST_ACTIVE_HR_ADMIN_CONFIRMATION_REQUIRED',
+        message: 'Last active HR admin, confirmation required',
+      });
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {

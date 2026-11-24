@@ -480,23 +480,37 @@ export class ApprovalsService {
     });
 
     if (!request) {
-      throw new NotFoundException('Leave request not found');
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAVE_REQUEST_NOT_FOUND',
+        message: 'Leave request not found',
+      });
     }
 
     // Permission rule check
     if (!canDecide({ id: callerId, role: callerRole, orgId }, request.user)) {
-      throw new ForbiddenException('Aap is request par decision nahi le sakte');
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'NOT_AUTHORIZED_TO_DECIDE',
+        message: 'You are not authorized to decide on this request',
+      });
     }
 
     if (request.status !== RequestStatus.pending) {
-      throw new ConflictException(
-        `Sirf pending request par decision liya ja sakta hai. Current status: ${request.status}`,
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'ONLY_PENDING_CAN_BE_DECIDED',
+        message: `Only pending requests can be decided. Current status: ${request.status}`,
+      });
     }
 
     const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);
     if (pendingSegments.length === 0) {
-      throw new ConflictException('Is request mein koi pending segment nahi hai');
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'NO_PENDING_SEGMENTS',
+        message: 'No pending segments found for this request',
+      });
     }
 
     // Validate that every pending segment has an entry in dto.decisions
@@ -513,16 +527,22 @@ export class ApprovalsService {
     }
 
     if (missingSegments.length > 0) {
-      throw new BadRequestException(
-        `Har pending segment ke liye decision dena zaroori hai. Missing segment(s): ${missingSegments.join(', ')}`,
-      );
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'MISSING_SEGMENT_DECISIONS',
+        message: `A decision is required for every pending segment. Missing segment(s): ${missingSegments.join(', ')}`,
+      });
     }
 
     // Validate no extraneous segment IDs
     const pendingSegmentIds = new Set(pendingSegments.map((s) => s.id));
     for (const d of dto.decisions) {
       if (!pendingSegmentIds.has(d.segmentId)) {
-        throw new BadRequestException(`Invalid or non-pending segment ID: ${d.segmentId}`);
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'INVALID_SEGMENT_ID',
+          message: `Invalid or non-pending segment ID: ${d.segmentId}`,
+        });
       }
     }
 
@@ -530,7 +550,11 @@ export class ApprovalsService {
     for (const d of dto.decisions) {
       if (d.action === 'reject') {
         if (!d.comment || !d.comment.trim()) {
-          throw new BadRequestException('Reject karne wale har segment ke liye comment zaroori hai');
+          throw new BadRequestException({
+            statusCode: 400,
+            code: 'DECISION_COMMENT_REQUIRED',
+            message: 'A comment is required for every rejected segment',
+          });
         }
       }
     }
@@ -566,7 +590,11 @@ export class ApprovalsService {
       });
 
       if (updateRes.count === 0) {
-        throw new ConflictException('Request was updated concurrently or is no longer pending');
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'CONCURRENT_UPDATE',
+          message: 'Request was updated concurrently or is no longer pending',
+        });
       }
 
       const decidedSegmentsResponse: Array<{ id: string; status: SegmentStatus; comment?: string | null }> = [];
@@ -590,9 +618,11 @@ export class ApprovalsService {
         });
 
         if (segUpdateRes.count === 0) {
-          throw new ConflictException(
-            `Segment ${seg.id} was updated concurrently or is no longer pending`,
-          );
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'CONCURRENT_UPDATE',
+            message: `Segment ${seg.id} was updated concurrently or is no longer pending`,
+          });
         }
 
         // If rejected, set occupancy = 0 so dates are freed up immediately
@@ -709,13 +739,19 @@ export class ApprovalsService {
     });
 
     if (!request) {
-      throw new NotFoundException('Leave request not found');
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAVE_REQUEST_NOT_FOUND',
+        message: 'Leave request not found',
+      });
     }
 
     if (request.status !== RequestStatus.pending) {
-      throw new ConflictException(
-        `Sirf pending request approve ho sakti hai. Current status: ${request.status}`,
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'ONLY_PENDING_CAN_BE_APPROVED',
+        message: `Only pending requests can be approved. Current status: ${request.status}`,
+      });
     }
 
     const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);
@@ -751,13 +787,19 @@ export class ApprovalsService {
     });
 
     if (!request) {
-      throw new NotFoundException('Leave request not found');
+      throw new NotFoundException({
+        statusCode: 404,
+        code: 'LEAVE_REQUEST_NOT_FOUND',
+        message: 'Leave request not found',
+      });
     }
 
     if (request.status !== RequestStatus.pending) {
-      throw new ConflictException(
-        `Sirf pending request reject ho sakti hai. Current status: ${request.status}`,
-      );
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'ONLY_PENDING_CAN_BE_REJECTED',
+        message: `Only pending requests can be rejected. Current status: ${request.status}`,
+      });
     }
 
     const pendingSegments = request.segments.filter((s) => s.status === SegmentStatus.pending);

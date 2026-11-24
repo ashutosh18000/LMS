@@ -269,7 +269,7 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         .set('Authorization', `Bearer ${rootToken}`);
       expect(healthRes.status).toBe(200);
 
-      // Root is blocked from org-level routes with 403: "Root org ke andar kaam nahi karta"
+      // Root is blocked from org-level routes with 403: "Root user cannot perform actions within an organization context"
       const blockedRoutes = [
         { method: 'get', path: '/approvals/pending' },
         { method: 'get', path: '/users' },
@@ -286,7 +286,10 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
           [route.method](route.path)
           .set('Authorization', `Bearer ${rootToken}`);
         expect(res.status).toBe(403);
-        expect(res.body.message).toBe('Root org ke andar kaam nahi karta');
+        expect(res.body.code).toBe('ROOT_ORG_CONTEXT_FORBIDDEN');
+        expect(res.body.message).toBe(
+          'Root user cannot perform actions within an organization context',
+        );
       }
 
       // Non-root users accessing /platform/* are blocked with 403

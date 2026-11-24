@@ -591,7 +591,8 @@ describe('Balances Module E2E', () => {
         .set('Authorization', `Bearer ${hrToken}`)
         .send({ fromYear: 2025 });
       expect(runBeforeAlloc.status).toBe(409);
-      expect(runBeforeAlloc.body.message).toContain('toYear ki allocation chalao');
+      expect(runBeforeAlloc.body.message).toContain('allocation for toYear first');
+      expect(runBeforeAlloc.body.code).toBe('TO_YEAR_ALLOCATION_MISSING');
 
       // Now create toYear (2026) allocation for eligible employees
       const toYearBalance = await prisma.leaveBalance.create({
@@ -859,8 +860,9 @@ describe('Balances Module E2E', () => {
         .send({ financialYearStartMonth: 4 });
 
       expect(blockedRes.status).toBe(409);
+      expect(blockedRes.body.code).toBe('FINANCIAL_YEAR_BALANCES_EXIST');
       expect(blockedRes.body.message).toContain(
-        'Balances maujood hain, financial year start nahi badal sakte',
+        'Cannot change financial year start month while balances exist',
       );
     });
   });

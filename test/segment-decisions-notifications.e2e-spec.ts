@@ -332,6 +332,7 @@ describe('Segment-Wise Decisions & In-App Notifications E2E', () => {
         });
 
       expect(incompleteRes.status).toBe(400);
+      expect(incompleteRes.body.code).toBe('MISSING_SEGMENT_DECISIONS');
       expect(incompleteRes.body.message).toMatch(/Missing segment/i);
     });
 
@@ -363,7 +364,8 @@ describe('Segment-Wise Decisions & In-App Notifications E2E', () => {
         });
 
       expect(rejectRes.status).toBe(400);
-      expect(rejectRes.body.message).toMatch(/comment zaroori hai/i);
+      expect(rejectRes.body.code).toBe('DECISION_COMMENT_REQUIRED');
+      expect(rejectRes.body.message).toMatch(/comment is required/i);
     });
 
     it('concurrency: handles double simultaneous decide with 409 Conflict', async () => {

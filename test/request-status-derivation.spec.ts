@@ -42,7 +42,7 @@ describe('deriveRequestStatus', () => {
     });
   });
 
-  describe('nahi to sab approved to approved', () => {
+  describe('all segments approved -> approved', () => {
     it('returns approved if single segment is approved', () => {
       expect(deriveRequestStatus([SegmentStatus.approved])).toBe(
         RequestStatus.approved,

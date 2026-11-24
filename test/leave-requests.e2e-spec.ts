@@ -1419,7 +1419,8 @@ describe('Leave Requests Module E2E', () => {
           ],
         });
       expect(res1.status).toBe(403);
-      expect(res1.body.message).toContain('Owner leave apply nahi karta');
+      expect(res1.body.code).toBe('OWNER_CANNOT_APPLY_LEAVE');
+      expect(res1.body.message).toContain('Organization owners cannot apply for leave');
 
       // Root
       const res2 = await request(app.getHttpServer())
