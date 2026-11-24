@@ -4,7 +4,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import * as dotenv from 'dotenv';
-import { OrgStatus, Portion, Prisma, RequestStatus, Role, SkipReason } from '@prisma/client';
+import { OrgStatus, Portion, Prisma, RequestStatus, Role, SegmentStatus, SkipReason } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
@@ -167,6 +167,14 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
   ) {
     const portion = opts?.portion ?? Portion.full;
     const status = opts?.status ?? RequestStatus.approved;
+    const segmentStatus =
+      status === RequestStatus.approved
+        ? SegmentStatus.approved
+        : status === RequestStatus.rejected
+        ? SegmentStatus.rejected
+        : status === RequestStatus.cancelled
+        ? SegmentStatus.cancelled
+        : SegmentStatus.pending;
     const start = DateUtil.parse(startDateStr);
     const end = DateUtil.parse(endDateStr);
     const spanDays = DateUtil.daysBetween(startDateStr, endDateStr);
@@ -194,6 +202,7 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
             endDate: end,
             portion,
             countedDays: new Prisma.Decimal(countedDays),
+            status: segmentStatus,
           },
         },
       },

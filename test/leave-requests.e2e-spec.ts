@@ -509,6 +509,115 @@ describe('Leave Requests Module E2E', () => {
         });
       expect(reapplyRes.status).toBe(201);
     });
+
+    it('allows two DIFFERENT users to apply on the exact same dates: both receive 201 Created (overlap is strictly scoped per user)', async () => {
+      const org = await createOrg();
+      const { user: userA, token: tokenA } = await createUserAndToken(
+        org.id,
+        Role.staff,
+        'user_a_overlap@acme.com',
+      );
+      const { user: userB, token: tokenB } = await createUserAndToken(
+        org.id,
+        Role.staff,
+        'user_b_overlap@acme.com',
+      );
+      const cl = await createLeaveType(org.id, { name: 'Casual Leave' });
+      await setLeaveBalance(userA.id, cl.id, 2026, 10, 0, 0);
+      await setLeaveBalance(userB.id, cl.id, 2026, 10, 0, 0);
+
+      const targetDates = {
+        startDate: '2026-11-18',
+        endDate: '2026-11-20',
+      };
+
+      // User A applies for 2026-11-18 to 2026-11-20 -> 201 Created
+      const resA = await request(app.getHttpServer())
+        .post('/leave-requests')
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({
+          reason: 'User A vacation',
+          segments: [
+            {
+              leaveTypeId: cl.id,
+              startDate: targetDates.startDate,
+              endDate: targetDates.endDate,
+              portion: Portion.full,
+            },
+          ],
+        });
+      expect(resA.status).toBe(201);
+
+      // User B applies on the EXACT SAME dates -> 201 Created (no overlap between distinct users)
+      const resB = await request(app.getHttpServer())
+        .post('/leave-requests')
+        .set('Authorization', `Bearer ${tokenB}`)
+        .send({
+          reason: 'User B vacation on same dates',
+          segments: [
+            {
+              leaveTypeId: cl.id,
+              startDate: targetDates.startDate,
+              endDate: targetDates.endDate,
+              portion: Portion.full,
+            },
+          ],
+        });
+      expect(resB.status).toBe(201);
+    });
+
+    it('rejects the SAME user applying twice on the exact same dates with 409 OVERLAP', async () => {
+      const org = await createOrg();
+      const { user: staff, token } = await createUserAndToken(
+        org.id,
+        Role.staff,
+        'same_user_overlap@acme.com',
+      );
+      const cl = await createLeaveType(org.id, { name: 'Casual Leave' });
+      await setLeaveBalance(staff.id, cl.id, 2026, 10, 0, 0);
+
+      const targetDates = {
+        startDate: '2026-11-23',
+        endDate: '2026-11-25',
+      };
+
+      // First submission -> 201 Created
+      const firstRes = await request(app.getHttpServer())
+        .post('/leave-requests')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          reason: 'First application',
+          segments: [
+            {
+              leaveTypeId: cl.id,
+              startDate: targetDates.startDate,
+              endDate: targetDates.endDate,
+              portion: Portion.full,
+            },
+          ],
+        });
+      expect(firstRes.status).toBe(201);
+
+      // Second submission by same user on exact same dates -> 409 OVERLAP
+      const secondRes = await request(app.getHttpServer())
+        .post('/leave-requests')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          reason: 'Duplicate application attempt',
+          segments: [
+            {
+              leaveTypeId: cl.id,
+              startDate: targetDates.startDate,
+              endDate: targetDates.endDate,
+              portion: Portion.full,
+            },
+          ],
+        });
+      expect(secondRes.status).toBe(409);
+      expect(secondRes.body.code).toBe('OVERLAP');
+      expect(secondRes.body.details).toBeDefined();
+      expect(secondRes.body.details.conflicts).toHaveLength(1);
+    });
   });
 
   // ===========================================================================

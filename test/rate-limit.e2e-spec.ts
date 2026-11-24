@@ -9,6 +9,7 @@ import { TokensService } from '../src/auth/tokens.service';
 import { LoginAttemptService } from '../src/auth/login-attempt.service';
 import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 import { OrgStatus, Role } from '@prisma/client';
+import { cleanTestDatabase } from './test-helpers';
 
 describe('Rate Limiting & Tiered Throttling E2E', () => {
   let app: INestApplication;
@@ -41,6 +42,7 @@ describe('Rate Limiting & Tiered Throttling E2E', () => {
     passwordService = app.get<PasswordService>(PasswordService);
     tokensService = app.get<TokensService>(TokensService);
     loginAttemptService = app.get<LoginAttemptService>(LoginAttemptService);
+    await cleanTestDatabase(prisma);
   });
 
   afterAll(async () => {

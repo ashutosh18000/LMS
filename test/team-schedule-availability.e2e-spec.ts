@@ -11,6 +11,7 @@ import {
   RequestStatus,
   Role,
   SaturdayMode,
+  SegmentStatus,
   SkipReason,
 } from '@prisma/client';
 import { AppModule } from '../src/app.module';
@@ -199,6 +200,7 @@ describe('Team Availability with Day Types & Schedule Resolution E2E', () => {
             endDate: dateObj,
             portion,
             countedDays: new Prisma.Decimal(isWorking ? weight : 0),
+            status: SegmentStatus.approved,
           },
         },
       },

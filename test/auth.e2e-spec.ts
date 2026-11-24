@@ -10,6 +10,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/auth/password.service';
 import { DummyProtectedController } from './dummy-protected.controller';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { cleanTestDatabase } from './test-helpers';
 
 dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 
@@ -51,20 +52,7 @@ describe('Authentication & Authorization E2E', () => {
 
   // Clean all tables before each test to ensure strict test isolation
   beforeEach(async () => {
-    await prisma.auditLog.deleteMany();
-    await prisma.refreshToken.deleteMany();
-    await prisma.leaveSegmentDay.deleteMany();
-    await prisma.leaveSegment.deleteMany();
-    await prisma.leaveRequest.deleteMany();
-    await prisma.balanceAdjustment.deleteMany();
-    await prisma.leaveBalance.deleteMany();
-    await prisma.carryForwardRun.deleteMany();
-    await prisma.employeeSchedule.deleteMany();
-    await prisma.workScheduleTemplate.deleteMany();
-    await prisma.leaveType.deleteMany();
-    await prisma.holiday.deleteMany();
-    await prisma.user.deleteMany();
-    await prisma.organization.deleteMany();
+    await cleanTestDatabase(prisma);
   });
 
   // Helper to extract refreshToken cookie value from Set-Cookie headers

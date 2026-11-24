@@ -390,6 +390,12 @@ export class LeaveRequestsService {
         orgId,
         date: { in: occupiedDates.map((date) => DateUtil.parse(date)) },
         occupancy: { gt: 0 },
+        skipReason: SkipReason.none,
+        segment: {
+          status: {
+            in: [SegmentStatus.pending, SegmentStatus.approved],
+          },
+        },
         request: {
           status: {
             in: [
@@ -1179,6 +1185,7 @@ export class LeaveRequestsService {
           orgId,
           requestId: id,
           cancelledBy: 'staff',
+          actorId: userId,
           requester: {
             id: request.user.id,
             name: request.user.name,
@@ -1400,6 +1407,7 @@ export class LeaveRequestsService {
           orgId,
           requestId: id,
           cancelledBy: 'hr',
+          actorId: callerId,
           requester: {
             id: request.user.id,
             name: request.user.name,

@@ -1006,7 +1006,12 @@ export class BalancesService {
         throw new NotFoundException('Leave balance not found');
       }
 
-      throw new BadRequestException('Insufficient leave balance');
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Insufficient leave balance',
+        error: 'Bad Request',
+        code: 'INSUFFICIENT_BALANCE',
+      });
     }
 
     return rows[0];
