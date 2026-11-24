@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import type { AuditLog } from '../../types/api';
 import { formatCalendarDate } from '../../lib/utils';
 import { Card, CardContent } from '../../components/ui/card';
@@ -8,10 +9,11 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { HelpCircle, AlertCircle } from 'lucide-react';
 
 export const AuditLogsPage: React.FC = () => {
-  const { data: logs = [], isLoading, error } = useQuery<AuditLog[]>({
+  const { data: logsData, isLoading, error } = useQuery<any>({
     queryKey: ['org-audit-logs'],
-    queryFn: () => apiRequest<AuditLog[]>('/org/audit-logs?limit=50'),
+    queryFn: () => apiRequest('/org/audit-logs?limit=50'),
   });
+  const logs: AuditLog[] = safeArray(logsData, 'auditLogs');
 
   return (
     <div className="space-y-6">
@@ -35,6 +37,12 @@ export const AuditLogsPage: React.FC = () => {
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>Failed to load audit logs.</span>
         </div>
+      )}
+
+      {!isLoading && !error && logs.length === 0 && (
+        <Card className="p-8 text-center text-slate-400">
+          <p className="font-semibold text-slate-600 text-xs">No audit logs recorded yet.</p>
+        </Card>
       )}
 
       {logs.length > 0 && (

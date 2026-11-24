@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import type { User, LeaveType } from '../../types/api';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -151,7 +152,7 @@ export const BalancesManagementPage: React.FC = () => {
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
             >
               <option value="">Select an employee</option>
-              {usersData?.items?.map((u) => (
+              {safeArray(usersData?.items, 'users').map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.name} ({u.email})
                 </option>
@@ -168,11 +169,13 @@ export const BalancesManagementPage: React.FC = () => {
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
             >
               <option value="">Select leave type</option>
-              {leaveTypes.filter((t) => !t.isWfh).map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
+              {safeArray(leaveTypes, 'leaveTypes')
+                .filter((t) => !t.isWfh)
+                .map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
             </select>
           </div>
 

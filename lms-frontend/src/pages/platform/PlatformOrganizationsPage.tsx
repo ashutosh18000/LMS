@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import type { Organization } from '../../types/api';
 import { formatCalendarDate } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
@@ -24,10 +25,11 @@ export const PlatformOrganizationsPage: React.FC = () => {
   const [timezone, setTimezone] = useState('Asia/Kolkata');
   const [fyStartMonth, setFyStartMonth] = useState(4);
 
-  const { data: orgs = [], isLoading, error } = useQuery<Organization[]>({
+  const { data: rawOrgsData, isLoading, error } = useQuery<any>({
     queryKey: ['platform-orgs'],
-    queryFn: () => apiRequest<Organization[]>('/platform/organizations'),
+    queryFn: () => apiRequest('/platform/organizations'),
   });
+  const orgs: Organization[] = safeArray(rawOrgsData, 'organizations');
 
   // Create Org Mutation
   const createMutation = useMutation({

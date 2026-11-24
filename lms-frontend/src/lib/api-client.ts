@@ -180,60 +180,94 @@ export async function apiRequest<T = any>(
   return (await response.json()) as T;
 }
 
-// User-friendly error translator based on backend error codes
+// User-friendly error translator: prioritizes backend message, falls back to code mapping
 export function getFriendlyErrorMessage(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.statusCode === 429) {
-      const timeMsg = err.retryAfterSeconds ? ` Please try again in ${err.retryAfterSeconds} seconds.` : ' Please wait before trying again.';
+      const timeMsg = err.retryAfterSeconds
+        ? ` Please try again in ${err.retryAfterSeconds} seconds.`
+        : ' Please wait before trying again.';
       return `Too many attempts.${timeMsg}`;
     }
 
-    if (err.statusCode === 403) {
-      return err.message && !err.message.includes('Forbidden') && !err.message.includes('nahi')
-        ? err.message
-        : 'You are not authorized to perform or decide on this request.';
+    // Backend message takes precedence because it contains detailed contextual information (dates, balances, next available date, etc.)
+    const backendMessage = typeof err.message === 'string' ? err.message.trim() : '';
+
+    // Check if message is a generic HTTP status string
+    const isGenericHttpStatusMessage =
+      !backendMessage ||
+      backendMessage === 'Forbidden' ||
+      backendMessage === 'Conflict' ||
+      backendMessage === 'Bad Request' ||
+      backendMessage === 'Internal Server Error' ||
+      backendMessage === 'Unauthorized' ||
+      backendMessage === 'Not Found';
+
+    if (!isGenericHttpStatusMessage) {
+      return backendMessage;
     }
 
-    if (err.statusCode === 409) {
-      return err.message && !err.message.includes('Conflict') && !err.message.includes('nahi')
-        ? err.message
-        : 'This request was modified concurrently or is no longer in pending status.';
-    }
-
-    if (err.statusCode === 400 && err.message) {
-      if (err.message.includes('comment') || err.message.includes('zaroori')) {
-        return 'A comment is required for every rejected segment.';
-      }
-      if (err.message.includes('Missing segment') || err.message.includes('decision dena')) {
-        return 'All pending segments must have a decision before submitting.';
-      }
-    }
-
+    // Fallback mapping by error code when backend message is empty or generic
     switch (err.code) {
       case 'OVERLAP':
-        return err.message || 'Selected dates overlap with an existing leave request.';
+        return 'Selected dates overlap with an existing leave request.';
+      case 'INTRA_REQUEST_OVERLAP':
+        return 'Multiple segments in this request overlap on the same date.';
       case 'INSUFFICIENT_BALANCE':
-        return err.message || 'You do not have enough leave balance for this request.';
+        return 'You do not have enough leave balance for this request.';
       case 'NO_BALANCE':
         return 'No leave balance record found for the requested leave type and year.';
       case 'MONTHLY_LIMIT_EXCEEDED':
-        return err.message || 'Monthly limit exceeded for this leave type.';
+        return 'Monthly limit exceeded for this leave type.';
       case 'MIN_NOTICE':
-        return err.message || 'This leave requires advance notice.';
+        return 'This leave requires advance notice.';
       case 'BACKDATE_EXCEEDED':
-        return err.message || 'Backdated leave exceeds the allowed backdate limit.';
+      case 'BACKDATE_NOT_ALLOWED':
+        return 'Backdated leave exceeds the allowed backdate limit.';
       case 'ZERO_COUNTED_DAYS':
         return 'Selected date range contains 0 working days (e.g., weekend or holiday).';
       case 'HALF_DAY_NOT_ALLOWED':
         return 'Half-day is not permitted for this leave type or multi-day range.';
+      case 'DECISION_COMMENT_REQUIRED':
+        return 'A comment is required for every rejected segment.';
+      case 'MISSING_SEGMENT_DECISIONS':
+        return 'All pending segments must have a decision before submitting.';
+      case 'NOT_AUTHORIZED_TO_DECIDE':
+        return 'You are not authorized to decide on this request.';
+      case 'ONLY_PENDING_CAN_BE_DECIDED':
+        return 'Only pending requests can be decided.';
+      case 'NO_PENDING_SEGMENTS':
+        return 'No pending segments found for this request.';
+      case 'CONCURRENT_UPDATE':
+        return 'This request was modified concurrently or is no longer pending.';
+      case 'OWNER_CANNOT_APPLY_LEAVE':
+        return 'Organization owners cannot apply for leave.';
+      case 'CANNOT_APPLY_FOR_SELF':
+        return 'Cannot apply on behalf of yourself.';
+      case 'CANNOT_APPLY_FOR_HR':
+        return 'Only Organization Owner can apply on-behalf for HR Admin.';
+      case 'INVALID_ON_BEHALF_TARGET':
+        return 'On-behalf leave can only be applied for staff, manager, or HR admin.';
+      case 'NOT_AUTHORIZED_TO_CANCEL':
+        return 'You are not authorized to cancel this approved leave.';
+      case 'CANNOT_CANCEL_REQUEST':
+        return 'Only pending requests can be cancelled.';
+      case 'ONLY_APPROVED_CAN_BE_CANCELLED':
+        return 'Only approved or partially approved requests can be cancelled.';
       case 'INVALID_SEGMENT':
-        return err.message || 'Invalid date segment provided.';
+        return 'Invalid date segment provided.';
       case 'ORGANIZATION_SUSPENDED':
         return 'Your organization has been suspended. Please contact platform support.';
       case 'NETWORK_ERROR':
         return 'Unable to reach backend API. Please check your internet or local server.';
       default:
-        return err.message || 'An error occurred while processing your request.';
+        if (err.statusCode === 403) {
+          return 'You are not authorized to perform this action.';
+        }
+        if (err.statusCode === 409) {
+          return 'This request has a conflict or was updated concurrently.';
+        }
+        return 'An error occurred while processing your request.';
     }
   }
 

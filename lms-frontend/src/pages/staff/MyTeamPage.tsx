@@ -1,6 +1,7 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import type { TodayAvailabilityResponse } from '../../types/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -100,7 +101,7 @@ export const MyTeamPage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="divide-y divide-slate-100">
-                {data.members.map((m) => (
+                {safeArray(data?.members, 'myTeamMembers').map((m) => (
                   <div key={m.userId} className="py-3 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-semibold text-xs flex items-center justify-center uppercase">

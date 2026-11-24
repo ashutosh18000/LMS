@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Play, Eye, AlertCircle, CheckCircle2 } from 'lucide-react';
@@ -19,8 +20,8 @@ export const CarryForwardPage: React.FC = () => {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
-      setPreviewItems(data);
+    onSuccess: (data: any) => {
+      setPreviewItems(safeArray(data?.items ?? data, 'carryForwardPreview'));
       setFeedback(null);
     },
     onError: (err) => setFeedback({ type: 'error', message: getFriendlyErrorMessage(err) }),
@@ -148,12 +149,17 @@ export const CarryForwardPage: React.FC = () => {
                 ) : (
                   previewItems.map((item, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="p-3 font-semibold text-slate-900">{item.userName || item.userId}</td>
-                      <td className="p-3 text-slate-700">{item.leaveTypeName || item.leaveTypeId}</td>
-                      <td className="p-3 text-slate-600 font-medium">{item.unusedDays}</td>
-                      <td className="p-3 text-slate-600">{item.carryForwardMax}</td>
-                      <td className="p-3 font-bold text-emerald-600">+{item.carriedDays}</td>
-                      <td className="p-3 font-medium text-rose-500">{item.expiredDays}</td>
+                      <td className="p-3 font-semibold text-slate-900">{item.name || item.userName || item.userId}</td>
+                      <td className="p-3 text-slate-700">{item.typeName || item.leaveTypeName || item.leaveTypeId}</td>
+                      <td className="p-3 text-slate-600 font-medium">{item.available ?? item.unusedDays ?? '0'}</td>
+                      <td className="p-3 text-slate-600">{item.carryForwardMax ?? '0'}</td>
+                      <td className="p-3 font-bold text-emerald-600">+{item.carry ?? item.carriedDays ?? '0'}</td>
+                      <td className="p-3 font-medium text-rose-500">
+                        {item.skippedReason ||
+                          (Number(item.available || 0) > Number(item.carry || 0)
+                            ? (Number(item.available || 0) - Number(item.carry || 0)).toFixed(1)
+                            : '0')}
+                      </td>
                     </tr>
                   ))
                 )}

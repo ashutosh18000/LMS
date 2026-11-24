@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import type { User, PaginatedUsersResponse, WorkScheduleTemplate, Role } from '../../types/api';
 import { formatCalendarDate, roleBadgeColor } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
@@ -219,14 +220,14 @@ export const UsersManagementPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.items.length === 0 ? (
+                {safeArray(data?.items, 'users').length === 0 ? (
                   <tr>
                     <td colSpan={6} className="text-center py-8 text-slate-400">
                       No employees match your search criteria.
                     </td>
                   </tr>
                 ) : (
-                  data.items.map((emp) => (
+                  safeArray(data?.items, 'users').map((emp) => (
                     <tr key={emp.id} className="hover:bg-slate-50/70 transition-colors">
                       <td className="p-3.5 font-medium text-slate-800">
                         <div className="font-semibold text-slate-900">{emp.name}</div>
@@ -358,7 +359,7 @@ export const UsersManagementPage: React.FC = () => {
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
             >
               <option value="">No manager (direct report to owner/HR)</option>
-              {managersData?.items?.map((m) => (
+              {safeArray(managersData?.items, 'managers').map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} ({m.email})
                 </option>
@@ -394,7 +395,7 @@ export const UsersManagementPage: React.FC = () => {
               className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
             >
               <option value="">Select a schedule template</option>
-              {templates.map((t) => (
+              {safeArray(templates, 'templates').map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} (Saturday: {t.saturdayMode})
                 </option>

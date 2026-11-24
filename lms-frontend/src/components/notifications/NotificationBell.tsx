@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
+import { safeArray } from '../../lib/safe-data';
 import { useAuth } from '../../context/AuthContext';
 import type {
   PaginatedNotificationsResponse,
@@ -67,7 +68,7 @@ export const NotificationBell: React.FC = () => {
       }),
     enabled: isOpen && !!user,
   });
-  const notifications = notifData?.items ?? [];
+  const notifications = safeArray(notifData?.items, 'notifications');
 
   // 3. Mark single notification as read
   const markReadMutation = useMutation({
@@ -101,7 +102,9 @@ export const NotificationBell: React.FC = () => {
 
     // Route to appropriate screen based on user role and notification context
     if (n.requestId) {
-      if (user?.role === 'hr_admin' || user?.role === 'org_owner') {
+      if (user?.role === 'manager') {
+        navigate('/team/availability');
+      } else if (user?.role === 'hr_admin' || user?.role === 'org_owner') {
         navigate('/hr/approvals');
       } else {
         navigate('/my-requests');
