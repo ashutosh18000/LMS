@@ -53,6 +53,8 @@ export function statusBadgeColor(status?: string): string {
   switch (status) {
     case 'approved':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    case 'partially_approved':
+      return 'bg-purple-50 text-purple-700 border-purple-200';
     case 'pending':
       return 'bg-amber-50 text-amber-700 border-amber-200';
     case 'rejected':
@@ -61,5 +63,22 @@ export function statusBadgeColor(status?: string): string {
       return 'bg-slate-100 text-slate-600 border-slate-200';
     default:
       return 'bg-slate-100 text-slate-700 border-slate-200';
+  }
+}
+
+export function formatStatusLabel(status?: string): string {
+  switch (status) {
+    case 'partially_approved':
+      return 'Partially Approved';
+    case 'approved':
+      return 'Approved';
+    case 'rejected':
+      return 'Rejected';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'pending':
+      return 'Pending';
+    default:
+      return status ? status.replace('_', ' ') : '—';
   }
 }

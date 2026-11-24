@@ -7,7 +7,7 @@ import { formatCalendarDate } from '../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { Users, Calendar, CheckCircle2, Home, Clock, SunMedium, AlertCircle } from 'lucide-react';
+import { Users, Calendar, CheckCircle2, Home, Clock, AlertCircle } from 'lucide-react';
 
 export const ManagerDashboardPage: React.FC = () => {
   const { data, isLoading, error } = useQuery<DashboardTeamResponse>({
@@ -44,7 +44,7 @@ export const ManagerDashboardPage: React.FC = () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Manager Dashboard</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Team roster oversight &bull; {data.teamSize} direct reports
+            Team roster oversight &bull; {data.today?.total ?? 0} direct reports
           </p>
         </div>
         <Link to="/team/availability">
@@ -61,7 +61,7 @@ export const ManagerDashboardPage: React.FC = () => {
             <span className="text-xs font-semibold text-slate-500">Team Size</span>
             <Users className="w-4 h-4 text-blue-500" />
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">{data.teamSize}</div>
+          <div className="text-2xl font-extrabold text-slate-900 mt-2">{data.today?.total ?? 0}</div>
         </Card>
 
         <Card className="p-4 border-l-4 border-l-emerald-500">
@@ -70,7 +70,7 @@ export const ManagerDashboardPage: React.FC = () => {
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="text-2xl font-extrabold text-emerald-600 mt-2">
-            {data.today.counts.available}
+            {data.today?.available ?? 0}
           </div>
         </Card>
 
@@ -80,7 +80,7 @@ export const ManagerDashboardPage: React.FC = () => {
             <Clock className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl font-extrabold text-rose-600 mt-2">
-            {data.today.counts.onLeave}
+            {data.today?.onLeave ?? 0}
           </div>
         </Card>
 
@@ -90,57 +90,41 @@ export const ManagerDashboardPage: React.FC = () => {
             <Home className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-extrabold text-indigo-600 mt-2">
-            {data.today.counts.wfh}
+            {data.today?.wfh ?? 0}
           </div>
         </Card>
       </div>
 
-      {/* Today's Roster Status */}
+      {/* Upcoming team leave and WFH */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">
-            Today's Team Roster ({formatCalendarDate(data.today.date)})
-          </CardTitle>
+          <CardTitle className="text-sm">Upcoming Team Leave &amp; WFH</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="divide-y divide-slate-100">
-            {data.today.members.map((m) => (
-              <div key={m.userId} className="py-3 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center uppercase">
-                    {m.userName.slice(0, 2)}
-                  </div>
+          {(data.upcoming ?? []).length === 0 ? (
+            <p className="py-8 text-center text-xs text-slate-400">No upcoming team leave or WFH.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {(data.upcoming ?? []).map((item, index) => (
+                <div key={`${item.member?.id ?? 'member'}-${item.startDate}-${index}`} className="py-3 flex items-center justify-between text-xs">
                   <div>
-                    <span className="font-semibold text-slate-800 text-sm block">{m.userName}</span>
-                    <span className="text-[11px] text-slate-400 capitalize">{m.role}</span>
+                    <span className="font-semibold text-slate-800 block">{item.member?.name || 'Team member'}</span>
+                    <span className="text-[11px] text-slate-400">{item.member?.department || 'General'}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${item.kind === 'wfh' ? 'bg-indigo-50 text-indigo-700' : 'bg-rose-50 text-rose-700'}`}>
+                      {item.kind === 'wfh' ? 'WFH' : 'On Leave'}
+                    </span>
+                    <span className="block text-[11px] text-slate-500 mt-1">
+                      {item.startDate && item.endDate
+                        ? `${formatCalendarDate(item.startDate)} - ${formatCalendarDate(item.endDate)}`
+                        : 'Dates unavailable'}
+                    </span>
                   </div>
                 </div>
-
-                <div>
-                  {m.status === 'available' && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      Available
-                    </span>
-                  )}
-                  {m.status === 'on_leave' && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                      On Leave {m.portion && m.portion !== 'full' ? `(${m.portion})` : ''}
-                    </span>
-                  )}
-                  {m.status === 'wfh' && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      WFH {m.portion && m.portion !== 'full' ? `(${m.portion})` : ''}
-                    </span>
-                  )}
-                  {m.status === 'off' && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      {m.offReason === 'holiday' ? `Holiday: ${m.holidayName}` : 'Weekly Off'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

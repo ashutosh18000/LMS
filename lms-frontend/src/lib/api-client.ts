@@ -188,6 +188,27 @@ export function getFriendlyErrorMessage(err: unknown): string {
       return `Too many attempts.${timeMsg}`;
     }
 
+    if (err.statusCode === 403) {
+      return err.message && !err.message.includes('Forbidden') && !err.message.includes('nahi')
+        ? err.message
+        : 'You are not authorized to perform or decide on this request.';
+    }
+
+    if (err.statusCode === 409) {
+      return err.message && !err.message.includes('Conflict') && !err.message.includes('nahi')
+        ? err.message
+        : 'This request was modified concurrently or is no longer in pending status.';
+    }
+
+    if (err.statusCode === 400 && err.message) {
+      if (err.message.includes('comment') || err.message.includes('zaroori')) {
+        return 'A comment is required for every rejected segment.';
+      }
+      if (err.message.includes('Missing segment') || err.message.includes('decision dena')) {
+        return 'All pending segments must have a decision before submitting.';
+      }
+    }
+
     switch (err.code) {
       case 'OVERLAP':
         return err.message || 'Selected dates overlap with an existing leave request.';

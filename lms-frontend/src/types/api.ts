@@ -7,7 +7,9 @@ export type Role = 'root' | 'org_owner' | 'hr_admin' | 'manager' | 'staff';
 
 export type OrgStatus = 'active' | 'suspended';
 
-export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'partially_approved';
+
+export type SegmentStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 
 export type Portion = 'full' | 'first_half' | 'second_half';
 
@@ -174,7 +176,18 @@ export interface LeaveBalance {
 
 export interface MyBalancesResponse {
   year: number;
-  balances: LeaveBalance[];
+  items: Array<{
+    leaveTypeId: string;
+    leaveTypeName: string;
+    isWfh: boolean;
+    deductsBalance: boolean;
+    allocated: number | string | null;
+    used: number | string | null;
+    pending: number | string | null;
+    available: number | string | null;
+    monthlyLimit: number | string | null;
+    usedThisMonth: number | string | null;
+  }>;
 }
 
 // Leave Requests & Segments
@@ -191,11 +204,16 @@ export interface LeaveSegment {
   id: string;
   requestId: string;
   leaveTypeId: string;
+  leaveTypeName?: string;
+  isWfh?: boolean;
   startDate: string;
   endDate: string;
   portion: Portion;
   countedDays: number;
-  leaveType: {
+  status?: SegmentStatus;
+  decidedAt?: string | null;
+  decisionComment?: string | null;
+  leaveType?: {
     id: string;
     name: string;
     isWfh: boolean;
@@ -283,72 +301,241 @@ export interface DayAvailabilityGrid {
 }
 
 export interface RangeAvailabilityResponse {
-  from: string;
-  to: string;
+  holidays: Array<{ date: string; name: string }>;
   members: Array<{
     userId: string;
-    userName: string;
-    department?: string | null;
-    role: Role;
-    days: Record<string, DayAvailabilityGrid>;
+    name: string;
+    department: string | null;
+    offDates: string[];
+    halfDates: string[];
+    segments: Array<{
+      kind: 'leave' | 'wfh';
+      startDate: string;
+      endDate: string;
+      portion: Portion;
+    }>;
   }>;
 }
 
 // Dashboards
 export interface DashboardMeResponse {
-  user: {
+  balances: Array<{
+    leaveTypeId: string;
+    leaveTypeName: string;
+    isWfh: boolean;
+    year: number;
+    allocated: number;
+    used: number;
+    pending: number;
+    available: number;
+    monthlyLimit: number | null;
+    usedThisMonth?: number;
+  }>;
+  pendingRequests: {
+    count: number;
+    items: Array<{
+      id: string;
+      reason: string;
+      spanDays: number;
+      countedDays: number;
+      createdAt: string;
+      segments: Array<{
+        id: string;
+        leaveTypeId: string;
+        leaveTypeName: string;
+        isWfh: boolean;
+        startDate: string;
+        endDate: string;
+        portion: Portion;
+        countedDays: number;
+      }>;
+    }>;
+  };
+  upcomingLeaves: Array<{
+    id: string;
+    kind: 'leave' | 'wfh';
+    leaveTypeName: string;
+    startDate: string;
+    endDate: string;
+    portion: Portion;
+  }>;
+  upcomingHolidays: Array<{
+    id: string;
+    name: string;
+    date: string;
+  }>;
+}
+
+export interface DashboardTeamResponse {
+  today: TodayAvailabilityResponse['counts'];
+  upcoming: Array<{
+    member: {
+      id: string;
+      name: string;
+      department: string | null;
+    };
+    kind: 'leave' | 'wfh';
+    startDate: string;
+    endDate: string;
+    portion: Portion;
+  }>;
+}
+
+export interface DashboardHrResponse {
+  pendingApprovalsCount: number;
+  onLeaveToday: {
+    leave: number;
+    wfh: number;
+  };
+  headcount: number;
+  thisMonth: {
+    byLeaveType: Array<{ name: string; days: number }>;
+    byDepartment: Array<{ department: string; days: number }>;
+  };
+  requestsLast30Days: {
+    pending: number;
+    approved: number;
+    rejected: number;
+    cancelled: number;
+  };
+  upcomingHolidays: Array<{ id: string; name: string; date: string }>;
+}
+
+export interface DashboardOwnerResponse extends DashboardHrResponse {
+  pendingHrAdminApprovals: number;
+  activeHrAdmins: number;
+  recentAudit: Array<{
+    id: string;
+    action: string;
+    actorName: string | null;
+    targetName: string | null;
+    createdAt: string;
+  }>;
+}
+
+export interface PendingApprovalItem {
+  id: string;
+  requester: {
     id: string;
     name: string;
     role: Role;
     department: string | null;
   };
-  year: number;
-  balances: Array<{
-    leaveTypeId: string;
-    name: string;
-    isWfh: boolean;
-    allocated: number;
-    used: number;
-    pending: number;
-    available: number;
-    monthlyLimit?: number | null;
-    usedThisMonth?: number;
-  }>;
-  pendingRequests: LeaveRequest[];
-  upcomingLeaves: LeaveRequest[];
-}
-
-export interface DashboardTeamResponse {
-  teamSize: number;
-  today: TodayAvailabilityResponse;
-  pendingTeamRequestsCount: number;
-}
-
-export interface DashboardHrResponse {
-  stats: {
-    totalUsers: number;
-    pendingApprovals: number;
-    onLeaveToday: number;
-    wfhToday: number;
-  };
-  todayAvailability: TodayAvailabilityResponse;
-  recentPending: LeaveRequest[];
-}
-
-export interface DashboardOwnerResponse {
-  org: {
+  segments: Array<{
     id: string;
-    name: string;
-    status: OrgStatus;
-    timezone: string;
-    financialYearStartMonth: number;
-  };
-  stats: {
-    totalEmployees: number;
-    totalHrAdmins: number;
-    pendingApprovals: number;
-    onLeaveToday: number;
-  };
+    leaveTypeId: string;
+    leaveTypeName: string;
+    isWfh: boolean;
+    startDate: string;
+    endDate: string;
+    portion: Portion;
+    countedDays: number;
+    status?: SegmentStatus;
+    decidedAt?: string | null;
+    decisionComment?: string | null;
+  }>;
+  reason: string;
+  spanDays: number;
+  countedDays: number;
+  createdAt: string;
+  createdBy: string | null;
+}
+
+export interface PendingApprovalsResponse {
+  items: PendingApprovalItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SegmentDecisionItem {
+  segmentId: string;
+  action: 'approve' | 'reject';
+  comment?: string;
+}
+
+export interface DecideRequestPayload {
+  decisions: SegmentDecisionItem[];
+}
+
+export interface DecideResponse {
+  message: string;
+  id: string;
+  status: RequestStatus;
+  segments: Array<{
+    id: string;
+    status: SegmentStatus;
+    comment?: string | null;
+  }>;
+}
+
+export interface MyLeaveRequestItem {
+  id: string;
+  reason: string;
+  status: RequestStatus;
+  spanDays: number;
+  countedDays: number;
+  createdAt: string;
+  decidedAt: string | null;
+  decisionComment: string | null;
+  decidedBy: string | null;
+  segments: Array<{
+    id: string;
+    leaveTypeId: string;
+    leaveTypeName: string;
+    isWfh: boolean;
+    startDate: string;
+    endDate: string;
+    portion: Portion;
+    countedDays: number;
+    status?: SegmentStatus;
+    decidedAt?: string | null;
+    decisionComment?: string | null;
+  }>;
+}
+
+export interface MyLeaveRequestsResponse {
+  items: MyLeaveRequestItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// In-App Notification Types
+export type NotificationType = 'leave_decided' | 'leave_cancelled';
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  requestId?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface PaginatedNotificationsResponse {
+  items: NotificationItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface UnreadCountResponse {
+  unreadCount: number;
+  count: number;
+}
+
+export interface MarkReadResponse {
+  message: string;
+  id: string;
+  readAt: string;
+}
+
+export interface MarkAllReadResponse {
+  message: string;
+  count: number;
 }
 
 // Audit Logs

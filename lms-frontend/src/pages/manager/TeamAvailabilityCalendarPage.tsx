@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api-client';
-import type { RangeAvailabilityResponse, TodayAvailabilityResponse } from '../../types/api';
+import type { RangeAvailabilityResponse } from '../../types/api';
 import { formatCalendarDate } from '../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -42,37 +42,44 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
   };
 
   const datesList = getDatesBetween(dateRange.from, dateRange.to);
+  const holidayNames = new Map((data?.holidays ?? []).map((holiday) => [holiday.date, holiday.name]));
 
-  const getCellDisplay = (dayInfo?: { status: string; portion?: string | null; offReason?: string | null; holidayName?: string | null }) => {
-    if (!dayInfo) return <span className="text-slate-300">—</span>;
-
-    if (dayInfo.status === 'on_leave') {
+  const getCellDisplay = (
+    date: string,
+    member: RangeAvailabilityResponse['members'][number],
+    holidayNames: Map<string, string>,
+  ) => {
+    const segment = (member.segments ?? []).find(
+      (item) => item.startDate <= date && item.endDate >= date,
+    );
+    if (segment?.kind === 'leave') {
       return (
         <span
-          title={`On Leave${dayInfo.portion && dayInfo.portion !== 'full' ? ` (${dayInfo.portion})` : ''}`}
+          title={`On Leave${segment.portion && segment.portion !== 'full' ? ` (${segment.portion})` : ''}`}
           className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800"
         >
-          {dayInfo.portion === 'first_half' ? 'L½' : dayInfo.portion === 'second_half' ? '½L' : 'L'}
+          {segment.portion === 'first_half' ? 'L½' : segment.portion === 'second_half' ? '½L' : 'L'}
         </span>
       );
     }
 
-    if (dayInfo.status === 'wfh') {
+    if (segment?.kind === 'wfh') {
       return (
         <span
-          title={`Work From Home${dayInfo.portion && dayInfo.portion !== 'full' ? ` (${dayInfo.portion})` : ''}`}
+          title={`Work From Home${segment.portion && segment.portion !== 'full' ? ` (${segment.portion})` : ''}`}
           className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800"
         >
-          {dayInfo.portion && dayInfo.portion !== 'full' ? 'W½' : 'WFH'}
+          {segment.portion && segment.portion !== 'full' ? 'W½' : 'WFH'}
         </span>
       );
     }
 
-    if (dayInfo.status === 'off') {
-      const isHol = dayInfo.offReason === 'holiday';
+    const holidayName = holidayNames.get(date);
+    if (holidayName || (member.offDates ?? []).includes(date)) {
+      const isHol = !!holidayName;
       return (
         <span
-          title={isHol ? `Holiday: ${dayInfo.holidayName || ''}` : 'Weekly Off'}
+          title={isHol ? `Holiday: ${holidayName}` : 'Weekly Off'}
           className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
             isHol ? 'bg-orange-100 text-orange-800' : 'bg-slate-200 text-slate-600'
           }`}
@@ -80,6 +87,10 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
           {isHol ? 'H' : 'Off'}
         </span>
       );
+    }
+
+    if ((member.halfDates ?? []).includes(date)) {
+      return <span title="Half working day" className="text-[10px] font-bold text-amber-600">½ day</span>;
     }
 
     return (
@@ -172,15 +183,15 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {data.members.map((member) => (
+                {(data.members ?? []).map((member) => (
                   <tr key={member.userId} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3 font-medium text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm">
-                      <div className="font-semibold text-slate-900">{member.userName}</div>
+                      <div className="font-semibold text-slate-900">{member.name || 'Team member'}</div>
                       <div className="text-[10px] text-slate-400">{member.department || 'General'}</div>
                     </td>
                     {datesList.map((d) => (
                       <td key={d} className="p-2 text-center">
-                        {getCellDisplay(member.days[d])}
+                        {getCellDisplay(d, member, holidayNames)}
                       </td>
                     ))}
                   </tr>

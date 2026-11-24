@@ -3,11 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { apiRequest } from '../../lib/api-client';
 import type { DashboardHrResponse } from '../../types/api';
-import { formatCalendarDate, statusBadgeColor } from '../../lib/utils';
+import { formatCalendarDate } from '../../lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
 import { Button } from '../../components/ui/button';
-import { Users, FileCheck, Clock, Home, UserCheck, AlertCircle, Plus } from 'lucide-react';
+import { Users, FileCheck, Clock, Home, UserCheck, AlertCircle } from 'lucide-react';
 
 export const HrDashboardPage: React.FC = () => {
   const { data, isLoading, error } = useQuery<DashboardHrResponse>({
@@ -55,7 +55,7 @@ export const HrDashboardPage: React.FC = () => {
           </Link>
           <Link to="/hr/approvals">
             <Button size="sm">
-              <FileCheck className="w-4 h-4 mr-1.5" /> Approvals ({data.stats.pendingApprovals})
+              <FileCheck className="w-4 h-4 mr-1.5" /> Approvals ({data.pendingApprovalsCount ?? 0})
             </Button>
           </Link>
         </div>
@@ -68,7 +68,7 @@ export const HrDashboardPage: React.FC = () => {
             <span className="text-xs font-semibold text-slate-500">Total Workforce</span>
             <Users className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-2xl font-extrabold text-slate-900 mt-2">{data.stats.totalUsers}</div>
+          <div className="text-2xl font-extrabold text-slate-900 mt-2">{data.headcount ?? 0}</div>
         </Card>
 
         <Card className="p-4 border-l-4 border-l-amber-500">
@@ -77,7 +77,7 @@ export const HrDashboardPage: React.FC = () => {
             <FileCheck className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-extrabold text-amber-600 mt-2">
-            {data.stats.pendingApprovals}
+            {data.pendingApprovalsCount ?? 0}
           </div>
         </Card>
 
@@ -87,7 +87,7 @@ export const HrDashboardPage: React.FC = () => {
             <Clock className="w-4 h-4 text-rose-500" />
           </div>
           <div className="text-2xl font-extrabold text-rose-600 mt-2">
-            {data.stats.onLeaveToday}
+            {data.onLeaveToday?.leave ?? 0}
           </div>
         </Card>
 
@@ -97,42 +97,29 @@ export const HrDashboardPage: React.FC = () => {
             <Home className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-extrabold text-indigo-600 mt-2">
-            {data.stats.wfhToday}
+            {data.onLeaveToday?.wfh ?? 0}
           </div>
         </Card>
       </div>
 
-      {/* Recent Pending Approvals & Today Roster */}
+      {/* Monthly breakdown and upcoming holidays */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-sm">Action Needed: Pending Leave Requests</CardTitle>
+            <CardTitle className="text-sm">This Month by Leave Type</CardTitle>
             <Link to="/hr/approvals" className="text-xs text-blue-600 hover:underline">
-              View all
+              Review approvals
             </Link>
           </CardHeader>
           <CardContent>
-            {data.recentPending.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400">
-                No pending requests in your queue.
-              </div>
+            {(data.thisMonth?.byLeaveType ?? []).length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">No approved leave this month.</div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {data.recentPending.slice(0, 5).map((req) => (
-                  <div key={req.id} className="py-3 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-semibold text-slate-900 block">{req.user?.name}</span>
-                      <span className="text-slate-400 text-[11px]">
-                        {req.segments[0]
-                          ? `${formatCalendarDate(req.segments[0].startDate)} to ${formatCalendarDate(req.segments[0].endDate)}`
-                          : 'Leave'} &bull; {req.countedDays} days
-                      </span>
-                    </div>
-                    <Link to="/hr/approvals">
-                      <Button size="sm" variant="outline">
-                        Review
-                      </Button>
-                    </Link>
+                {(data.thisMonth?.byLeaveType ?? []).map((item) => (
+                  <div key={item.name} className="py-3 flex items-center justify-between text-xs">
+                    <span className="font-medium text-slate-800">{item.name || 'Leave type'}</span>
+                    <span className="font-semibold text-slate-600">{item.days ?? 0} days</span>
                   </div>
                 ))}
               </div>
@@ -143,9 +130,34 @@ export const HrDashboardPage: React.FC = () => {
         {/* Quick HR Setup Shortcuts */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">HR Management Center</CardTitle>
+            <CardTitle className="text-sm">Department Breakdown &amp; Upcoming Holidays</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2.5">
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              {(data.thisMonth?.byDepartment ?? []).map((item) => (
+                <div key={item.department} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-600">{item.department || 'Unassigned'}</span>
+                  <span className="font-semibold text-slate-700">{item.days ?? 0} days</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-100 pt-3">
+              <h3 className="text-xs font-semibold text-slate-700 mb-2">Upcoming Holidays</h3>
+              {(data.upcomingHolidays ?? []).length === 0 ? (
+                <p className="text-xs text-slate-400">No upcoming holidays.</p>
+              ) : (data.upcomingHolidays ?? []).map((holiday) => (
+                <div key={holiday.id} className="flex justify-between text-xs py-1">
+                  <span className="text-slate-600">{holiday.name || 'Holiday'}</span>
+                  <span className="text-slate-400">{holiday.date ? formatCalendarDate(holiday.date) : 'Date unavailable'}</span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-slate-100 pt-3 flex flex-wrap gap-3 text-[11px] text-slate-500">
+              <span>Last 30 days:</span>
+              <span>Pending {data.requestsLast30Days?.pending ?? 0}</span>
+              <span>Approved {data.requestsLast30Days?.approved ?? 0}</span>
+              <span>Rejected {data.requestsLast30Days?.rejected ?? 0}</span>
+            </div>
             <Link
               to="/hr/users"
               className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-100/70 transition-colors text-xs font-semibold text-slate-800"

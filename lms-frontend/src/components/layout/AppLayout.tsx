@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roleBadgeColor } from '../../lib/utils';
+import { NotificationBell } from '../notifications/NotificationBell';
+import { ErrorBoundary } from '../ErrorBoundary';
 import {
   Calendar,
   Clock,
@@ -235,6 +237,18 @@ export const AppLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Desktop Top Header */}
+        <header className="hidden lg:flex items-center justify-between bg-white border-b border-slate-200/80 px-8 py-3 sticky top-0 z-30 shadow-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500">
+              Workspace &bull; <strong className="text-slate-800">{user?.organization?.name || 'Leave Management System'}</strong>
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <NotificationBell />
+          </div>
+        </header>
+
         {/* Mobile Top Header */}
         <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between sticky top-0 z-30">
           <div className="flex items-center gap-2">
@@ -247,6 +261,7 @@ export const AppLayout: React.FC = () => {
             <span className="font-bold text-slate-900 text-sm">SVMS Portal</span>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <span
               className={`text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase ${roleBadgeColor(
                 user?.role,
@@ -282,7 +297,9 @@ export const AppLayout: React.FC = () => {
 
         {/* Page Content Viewport */}
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

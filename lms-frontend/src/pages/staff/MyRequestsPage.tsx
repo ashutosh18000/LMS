@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest, getFriendlyErrorMessage } from '../../lib/api-client';
-import type { LeaveRequest, RequestStatus } from '../../types/api';
-import { formatCalendarDate, statusBadgeColor } from '../../lib/utils';
+import type { MyLeaveRequestItem, MyLeaveRequestsResponse } from '../../types/api';
+import { formatCalendarDate, formatStatusLabel, statusBadgeColor } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -12,14 +12,14 @@ import { Clock, Eye, XCircle, AlertCircle, CheckCircle2 } from 'lucide-react';
 export const MyRequestsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('');
-  const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null);
+  const [selectedRequest, setSelectedRequest] = useState<MyLeaveRequestItem | null>(null);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { data, isLoading, error } = useQuery<{ items: LeaveRequest[]; total: number }>({
+  const { data, isLoading, error } = useQuery<MyLeaveRequestsResponse>({
     queryKey: ['my-requests', statusFilter],
     queryFn: () =>
-      apiRequest<{ items: LeaveRequest[]; total: number }>('/leave-requests/mine', {
+      apiRequest<MyLeaveRequestsResponse>('/leave-requests/mine', {
         params: { status: statusFilter || undefined, limit: 50 },
       }),
   });
@@ -66,6 +66,7 @@ export const MyRequestsPage: React.FC = () => {
             <option value="">All Statuses</option>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
+            <option value="partially_approved">Partially Approved</option>
             <option value="rejected">Rejected</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -96,27 +97,27 @@ export const MyRequestsPage: React.FC = () => {
 
       {data && (
         <div className="space-y-3">
-          {data.items.length === 0 ? (
+          {(data.items ?? []).length === 0 ? (
             <Card className="text-center py-12 text-slate-400 text-xs">
               No leave requests found for the selected filter.
             </Card>
           ) : (
-            data.items.map((req) => (
+            (data.items ?? []).map((req) => (
               <Card key={req.id} className="hover:border-slate-300 transition-colors">
                 <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2.5">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${statusBadgeColor(req.status)}`}>
-                        {req.status}
+                        {formatStatusLabel(req.status)}
                       </span>
                       <span className="text-xs font-semibold text-slate-900">
-                        {req.segments[0]
-                          ? `${formatCalendarDate(req.segments[0].startDate)} to ${formatCalendarDate(req.segments[req.segments.length - 1].endDate)}`
+                        {req.segments?.[0]
+                          ? `${formatCalendarDate(req.segments[0].startDate)} to ${formatCalendarDate(req.segments[req.segments.length - 1]?.endDate ?? req.segments[0].endDate)}`
                           : 'Leave'}
                       </span>
-                      {req.segments.length > 1 && (
+                      {(req.segments?.length ?? 0) > 1 && (
                         <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
-                          {req.segments.length} segments
+                          {req.segments?.length ?? 0} segments
                         </span>
                       )}
                     </div>
@@ -165,7 +166,7 @@ export const MyRequestsPage: React.FC = () => {
               <div>
                 <span className="block text-[10px] uppercase text-slate-400 font-semibold">Status</span>
                 <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold border uppercase ${statusBadgeColor(selectedRequest.status)}`}>
-                  {selectedRequest.status}
+                  {formatStatusLabel(selectedRequest.status)}
                 </span>
               </div>
               <div>
@@ -196,18 +197,35 @@ export const MyRequestsPage: React.FC = () => {
 
             <div>
               <span className="block text-[10px] uppercase text-slate-400 font-semibold mb-2">Segments Breakdown</span>
-              <div className="space-y-1.5 divide-y divide-slate-100">
-                {selectedRequest.segments.map((s) => (
-                  <div key={s.id} className="pt-1.5 flex items-center justify-between">
-                    <div>
-                      <span className="font-semibold text-slate-800">{s.leaveType.name}</span>
-                      <span className="text-slate-400 ml-2">
-                        {formatCalendarDate(s.startDate)} to {formatCalendarDate(s.endDate)}
+              <div className="space-y-3 divide-y divide-slate-100">
+                {(selectedRequest.segments ?? []).map((s) => (
+                  <div key={s.id} className="pt-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800">{s.leaveTypeName || (s.isWfh ? 'Work From Home' : 'Leave')}</span>
+                          {s.status && (
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border uppercase ${statusBadgeColor(s.status)}`}>
+                              {formatStatusLabel(s.status)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {formatCalendarDate(s.startDate)} to {formatCalendarDate(s.endDate)}
+                        </div>
+                      </div>
+                      <span className="font-semibold text-blue-700">
+                        {s.countedDays} days ({s.portion})
                       </span>
                     </div>
-                    <span className="font-semibold text-blue-700">
-                      {s.countedDays} days ({s.portion})
-                    </span>
+
+                    {/* Show segment rejection comment if rejected */}
+                    {s.status === 'rejected' && s.decisionComment && (
+                      <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-[11px]">
+                        <span className="font-semibold">HR Comment: </span>
+                        {s.decisionComment}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
