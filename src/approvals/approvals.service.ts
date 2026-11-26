@@ -542,7 +542,7 @@ export class ApprovalsService {
           statusCode: 400,
           code: 'INVALID_SEGMENT_ID',
           message: `Invalid or non-pending segment ID: ${d.segmentId}`,
-        });
+ });
       }
     }
 

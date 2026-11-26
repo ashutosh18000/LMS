@@ -79,6 +79,6 @@ export function formatStatusLabel(status?: string): string {
     case 'pending':
       return 'Pending';
     default:
-      return status ? status.replace('_', ' ') : '—';
+      return (status ?? '').replace('_', ' ') || '—';
   }
 }

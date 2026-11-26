@@ -63,6 +63,13 @@ function HomeRedirect() {
   return <Navigate to="/dashboard" replace />;
 }
 
+function MyTeamRoleRedirect({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (user?.role === 'manager') return <Navigate to="/manager/dashboard" replace />;
+  return <>{children}</>;
+}
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -99,7 +106,10 @@ export function App() {
               <Route path="/apply-leave" element={<ApplyLeavePage />} />
               <Route path="/my-requests" element={<MyRequestsPage />} />
               <Route path="/holidays" element={<HolidaysPage />} />
-              <Route path="/my-team" element={<MyTeamPage />} />
+              <Route
+                path="/my-team"
+                element={<MyTeamRoleRedirect><MyTeamPage /></MyTeamRoleRedirect>}
+              />
 
               {/* Manager Routes */}
               <Route

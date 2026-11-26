@@ -682,7 +682,7 @@ describe('Team Availability with Day Types & Schedule Resolution E2E', () => {
       expect(mgrInTeam.halfDates).toContain('2026-11-07');
     });
 
-    it('GET /dashboard/team includes "off" in today counts and excludes off-date leaves from upcoming', async () => {
+    it('GET /dashboard/team includes "off" in today counts and matches matrix availability', async () => {
       const org = await createOrg();
       const manager = await createUserAndToken(org.id, Role.manager, 'mgr@acme.com');
       const staff = await createUserAndToken(org.id, Role.staff, 's@acme.com', { managerId: manager.user.id });
@@ -702,13 +702,16 @@ describe('Team Availability with Day Types & Schedule Resolution E2E', () => {
 
       expect(res.status).toBe(200);
       // today counts includes "off"
-      expect(res.body.today.off).toBe(1);
-      expect(res.body.today.onLeave).toBe(0);
-      expect(res.body.today.available).toBe(0);
-      expect(res.body.today.total).toBe(1);
+      expect(res.body.today.counts.off).toBe(1);
+      expect(res.body.today.counts.onLeave).toBe(0);
+      expect(res.body.today.counts.available).toBe(0);
+      expect(res.body.today.counts.total).toBe(1);
+      expect(res.body.today.members[0].status).toBe('off');
 
-      // Upcoming leave falling strictly on an off date is NOT considered upcoming leave
-      expect(res.body.upcoming).toEqual([]);
+      // The shared range source shows the approved segment just like the matrix.
+      expect(res.body.upcoming).toHaveLength(1);
+      expect(res.body.upcoming[0].kind).toBe('leave');
+      expect(res.body.upcoming[0].startDate).toBe('2026-11-07');
     });
   });
 });

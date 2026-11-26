@@ -253,10 +253,10 @@ export class DashboardService {
 
   /**
    * 2. GET /dashboard/team
-   * Team overview for managers: today's counts and upcoming leaves for direct reports (next 7d).
+  * Team overview for managers: today's availability and approved absences over 30 days.
    */
   async getTeamDashboard(caller: { id: string; orgId: string }) {
-    const { today } = await this.getOrgToday(caller.orgId);
+    const { today: orgToday } = await this.getOrgToday(caller.orgId);
 
     const directReports = await this.prisma.user.findMany({
       where: {
@@ -274,76 +274,37 @@ export class DashboardService {
     const directReportIds = directReports.map((u) => u.id);
 
     // Today's counts via shared availability service
-    const todayRes = await this.availabilityService.buildToday(
+    const today = await this.availabilityService.buildToday(
       caller.orgId,
       directReportIds,
-      today,
+      orgToday,
     );
 
-    // Upcoming direct report leaves next 7 days
-    const next7Str = DateUtil.addDays(today, 7);
-    const segments = await this.prisma.leaveSegment.findMany({
-      where: {
-        userId: { in: directReportIds },
-        startDate: { lte: DateUtil.parse(next7Str) },
-        endDate: { gte: DateUtil.parse(today) },
-        status: SegmentStatus.approved,
-        request: {
-          orgId: caller.orgId,
-          status: { in: [RequestStatus.approved, RequestStatus.partially_approved] },
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            department: true,
-          },
-        },
-        leaveType: {
-          select: {
-            isWfh: true,
-          },
-        },
-        segmentDays: {
-          where: {
-            date: {
-              gte: DateUtil.parse(today),
-              lte: DateUtil.parse(next7Str),
-            },
-            skipReason: SkipReason.none,
-          },
-        },
-      },
-      orderBy: { startDate: 'asc' },
-    });
+    const rangeEnd = DateUtil.addDays(orgToday, 30);
+    const range = await this.availabilityService.buildAvailability(
+      caller.orgId,
+      directReportIds,
+      orgToday,
+      rangeEnd,
+    );
 
-    // Privacy: Only member info, kind, clipped dates, and portion. NO reason or leave type name.
-    // Exclude segments that fall strictly on off dates (no working leave days in range)
-    const upcoming = segments
-      .filter((s) => s.segmentDays.length > 0)
-      .map((s) => {
-        const segStart = DateUtil.format(s.startDate);
-        const segEnd = DateUtil.format(s.endDate);
-        const clippedStart = segStart < today ? today : segStart;
-        const clippedEnd = segEnd > next7Str ? next7Str : segEnd;
-
-        return {
+    const upcoming = range.members
+      .flatMap((member) =>
+        member.segments.map((segment) => ({
           member: {
-            id: s.user.id,
-            name: s.user.name,
-            department: s.user.department,
+            id: member.userId,
+            name: member.name,
           },
-          kind: s.leaveType.isWfh ? ('wfh' as const) : ('leave' as const),
-          startDate: clippedStart,
-          endDate: clippedEnd,
-          portion: s.portion,
-        };
-      });
+          kind: segment.kind,
+          startDate: segment.startDate,
+          endDate: segment.endDate,
+          portion: segment.portion,
+        })),
+      )
+      .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
     return {
-      today: todayRes.counts,
+      today,
       upcoming,
     };
   }

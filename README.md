@@ -1919,18 +1919,17 @@ Personal overview:
 
 ### 2. `GET /dashboard/team` (`@MinRole(Role.manager)`)
 Manager's team dashboard:
-- `today`: Real-time day-type counts (`onLeave`, `wfh`, `available`, `off`, `total`).
-- `upcoming`: Direct reports' approved leave/WFH in the next 7 days (`member`, `kind`, `startDate`, `endDate`, `portion`). Leaves that fall strictly on non-working/off dates are filtered out so managers only see actionable upcoming absences.
+- `today`: Shared today availability response (`date`, `dayInfo`, `counts`, `members`), including each direct report's status and optional `halfDay` flag.
+- `upcoming`: Direct reports' approved leave/WFH for the next 30 days (`member`, `kind`, `startDate`, `endDate`, `portion`), sourced from the same availability service as `/team/availability`.
 - Privacy: No leave type name, no reason.
 - **Response (`200 OK`)**:
   ```json
   {
     "today": {
-      "onLeave": 1,
-      "wfh": 0,
-      "available": 2,
-      "off": 1,
-      "total": 4
+      "date": "2026-11-25",
+      "dayInfo": { "isHoliday": false },
+      "counts": { "onLeave": 1, "wfh": 0, "available": 2, "off": 1, "total": 4 },
+      "members": []
     },
     "upcoming": [
       {

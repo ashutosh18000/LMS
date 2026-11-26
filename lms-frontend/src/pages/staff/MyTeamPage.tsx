@@ -6,7 +6,7 @@ import type { TodayAvailabilityResponse } from '../../types/api';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
 import { formatCalendarDate } from '../../lib/utils';
-import { Users, CheckCircle2, Home, SunMedium, AlertCircle, Clock } from 'lucide-react';
+import { CheckCircle2, Home, SunMedium, AlertCircle, Clock } from 'lucide-react';
 
 export const MyTeamPage: React.FC = () => {
   const { data, isLoading, error } = useQuery<TodayAvailabilityResponse>({
@@ -14,7 +14,10 @@ export const MyTeamPage: React.FC = () => {
     queryFn: () => apiRequest<TodayAvailabilityResponse>('/my-team/availability/today'),
   });
 
-  const getStatusBadge = (status: string, portion?: string | null, offReason?: string | null, holidayName?: string | null) => {
+  const getStatusBadge = (
+    status: TodayAvailabilityResponse['members'][number]['status'] | null | undefined,
+    portion?: string | null,
+  ) => {
     switch (status) {
       case 'available':
         return (
@@ -22,16 +25,16 @@ export const MyTeamPage: React.FC = () => {
             <CheckCircle2 className="w-3 h-3" /> Available
           </span>
         );
-      case 'on_leave':
+      case 'leave':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-            <Clock className="w-3 h-3" /> On Leave {portion && portion !== 'full' ? `(${portion.replace('_', ' ')})` : ''}
+            <Clock className="w-3 h-3" /> On Leave{portion && portion !== 'full' ? ` (${(portion ?? '').replace('_', ' ')})` : ''}
           </span>
         );
       case 'wfh':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-            <Home className="w-3 h-3" /> WFH {portion && portion !== 'full' ? `(${portion.replace('_', ' ')})` : ''}
+            <Home className="w-3 h-3" /> WFH{portion && portion !== 'full' ? ` (${(portion ?? '').replace('_', ' ')})` : ''}
           </span>
         );
       case 'off':
@@ -39,7 +42,7 @@ export const MyTeamPage: React.FC = () => {
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
             <SunMedium className="w-3 h-3 text-orange-500" />
-            {offReason === 'holiday' ? `Holiday${holidayName ? `: ${holidayName}` : ''}` : 'Weekly Off'}
+            Weekly Off
           </span>
         );
     }
@@ -70,6 +73,11 @@ export const MyTeamPage: React.FC = () => {
 
       {data && (
         <div className="space-y-6">
+          {data.dayInfo?.isHoliday && (
+            <div className="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+              Holiday{data.dayInfo.holidayName ? `: ${data.dayInfo.holidayName}` : ''}
+            </div>
+          )}
           {/* Quick Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <Card className="text-center p-3">
@@ -105,17 +113,22 @@ export const MyTeamPage: React.FC = () => {
                   <div key={m.userId} className="py-3 flex items-center justify-between text-xs">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-semibold text-xs flex items-center justify-center uppercase">
-                        {m.userName.slice(0, 2)}
+                        {(m.name ?? '?').slice(0, 2)}
                       </div>
                       <div>
-                        <span className="font-semibold text-slate-800 text-sm block">{m.userName}</span>
+                        <span className="font-semibold text-slate-800 text-sm block">{m.name ?? 'Team member'}</span>
                         <span className="text-[11px] text-slate-400">
-                          {m.department || 'General'} &bull; <span className="capitalize">{m.role}</span>
+                          {m.department ?? 'General'}
                         </span>
                       </div>
                     </div>
-                    <div>
-                      {getStatusBadge(m.status, m.portion, m.offReason, m.holidayName)}
+                    <div className="flex items-center gap-2">
+                      {m.halfDay && (
+                        <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Half day
+                        </span>
+                      )}
+                      {getStatusBadge(m.status, m.portion)}
                     </div>
                   </div>
                 ))}

@@ -874,7 +874,7 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
       expect(res.body.upcomingHolidays[0].name).toBe('Christmas');
     });
 
-    it('GET /dashboard/team provides today counts and upcoming leaves for direct reports without leaking reason', async () => {
+    it('GET /dashboard/team provides today roster and 30-day approved absences without leaking private data', async () => {
       const org = await createOrg();
       const { user: manager, token: managerToken } = await createUserAndToken(
         org.id,
@@ -885,13 +885,24 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
         org.id,
         Role.staff,
         'rep@acme.com',
-        { managerId: manager.id },
+        { name: 'Sam Example', managerId: manager.id },
+      );
+      const { user: pendingReport } = await createUserAndToken(
+        org.id,
+        Role.staff,
+        'pending-rep@acme.com',
+        { name: 'Pending Example', managerId: manager.id },
       );
 
       const lt = await createLeaveType(org.id, { name: 'Secret Vacation' });
-      // Upcoming leave within next 7 days (today is 2026-11-15, leave is 2026-11-18)
-      await createApprovedLeaveRequest(org.id, report, lt, '2026-11-18', '2026-11-19', {
+      clockService.setFixedToday('2026-11-25');
+      await createApprovedLeaveRequest(org.id, report, lt, '2026-12-03', '2026-12-03', {
         reason: 'TOP SECRET VACATION',
+        portion: Portion.first_half,
+      });
+      await createApprovedLeaveRequest(org.id, pendingReport, lt, '2026-11-30', '2026-11-30', {
+        reason: 'PENDING PRIVATE REASON',
+        status: RequestStatus.pending,
       });
 
       const res = await request(app.getHttpServer())
@@ -900,13 +911,19 @@ describe('Read-Only Views, Reports, Dashboards & Root Guard E2E', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.today).toBeDefined();
+      expect(res.body.today.members).toHaveLength(2);
+      expect(res.body.today.members.map((member: any) => member.name)).toContain('Sam Example');
+      expect(res.body.today.members[0].status).toBe('available');
       expect(res.body.upcoming).toHaveLength(1);
       expect(res.body.upcoming[0].member.id).toBe(report.id);
       expect(res.body.upcoming[0].kind).toBe('leave');
+      expect(res.body.upcoming[0].startDate).toBe('2026-12-03');
+      expect(res.body.upcoming[0].portion).toBe(Portion.first_half);
 
       // Privacy: no reason or leave type name in team dashboard
       const text = JSON.stringify(res.body);
       expect(text).not.toContain('TOP SECRET VACATION');
+      expect(text).not.toContain('PENDING PRIVATE REASON');
       expect(text).not.toContain('Secret Vacation');
     });
 

@@ -271,17 +271,19 @@ export interface LeaveRequestPreview {
 // Availability Types
 export interface AvailabilityMemberSummary {
   userId: string;
-  userName: string;
+  name: string;
   department?: string | null;
-  role: Role;
-  status: 'available' | 'on_leave' | 'wfh' | 'off';
+  status: 'available' | 'leave' | 'wfh' | 'off';
   portion?: Portion | null;
-  offReason?: 'weekly_off' | 'holiday' | null;
-  holidayName?: string | null;
+  halfDay?: boolean;
 }
 
 export interface TodayAvailabilityResponse {
   date: string;
+  dayInfo: {
+    isHoliday: boolean;
+    holidayName?: string;
+  };
   counts: {
     total: number;
     available: number;
@@ -294,10 +296,9 @@ export interface TodayAvailabilityResponse {
 
 export interface DayAvailabilityGrid {
   date: string;
-  status: 'available' | 'on_leave' | 'wfh' | 'off';
+  status: 'available' | 'leave' | 'wfh' | 'off';
   portion?: Portion | null;
-  offReason?: 'weekly_off' | 'holiday' | null;
-  holidayName?: string | null;
+  halfDay?: boolean;
 }
 
 export interface RangeAvailabilityResponse {
@@ -367,12 +368,11 @@ export interface DashboardMeResponse {
 }
 
 export interface DashboardTeamResponse {
-  today: TodayAvailabilityResponse['counts'];
+  today: TodayAvailabilityResponse;
   upcoming: Array<{
     member: {
       id: string;
       name: string;
-      department: string | null;
     };
     kind: 'leave' | 'wfh';
     startDate: string;

@@ -1,19 +1,18 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api-client';
-import type { RangeAvailabilityResponse } from '../../types/api';
-import { formatCalendarDate } from '../../lib/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import type { RangeAvailabilityResponse, TodayAvailabilityResponse } from '../../types/api';
+import { Card } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
-import { Calendar, Users, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 export const TeamAvailabilityCalendarPage: React.FC = () => {
-  // Setup 14-day window starting from today
+  // Start with the same 30-day window used by the manager dashboard.
   const getInitialDates = () => {
     const start = new Date();
-    start.setDate(start.getDate() - 2); // 2 days ago
+    start.setHours(0, 0, 0, 0);
     const end = new Date(start);
-    end.setDate(end.getDate() + 13); // 14 days range
+    end.setDate(end.getDate() + 30);
 
     const fmt = (d: Date) => d.toISOString().split('T')[0];
     return { from: fmt(start), to: fmt(end) };
@@ -27,6 +26,11 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
       apiRequest<RangeAvailabilityResponse>('/team/availability', {
         params: { from: dateRange.from, to: dateRange.to },
       }),
+  });
+
+  const { data: todayData } = useQuery<TodayAvailabilityResponse>({
+    queryKey: ['team-availability-today'],
+    queryFn: () => apiRequest<TodayAvailabilityResponse>('/team/availability/today'),
   });
 
   // Generate date array for headers
@@ -146,7 +150,7 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-1.5">
           <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-600">Off</span>
-          <span className="text-slate-600">Weekly Off (Sat/Sun)</span>
+          <span className="text-slate-600">Weekly Off</span>
         </div>
       </div>
 
@@ -174,7 +178,15 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
                     const dayNum = d.split('-')[2];
 
                     return (
-                      <th key={d} className="p-2 text-center font-semibold text-slate-700 min-w-[50px]">
+                      <th
+                        key={d}
+                        aria-current={d === todayData?.date ? 'date' : undefined}
+                        className={`p-2 text-center font-semibold min-w-[50px] ${
+                          d === todayData?.date
+                            ? 'bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-300'
+                            : 'text-slate-700'
+                        }`}
+                      >
                         <span className="block text-[10px] text-slate-400 font-bold">{dayName}</span>
                         <span>{dayNum}</span>
                       </th>
@@ -186,11 +198,16 @@ export const TeamAvailabilityCalendarPage: React.FC = () => {
                 {(data.members ?? []).map((member) => (
                   <tr key={member.userId} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3 font-medium text-slate-800 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-sm">
-                      <div className="font-semibold text-slate-900">{member.name || 'Team member'}</div>
-                      <div className="text-[10px] text-slate-400">{member.department || 'General'}</div>
+                      <div className="font-semibold text-slate-900">{member.name ?? 'Team member'}</div>
+                      <div className="text-[10px] text-slate-400">{member.department ?? 'General'}</div>
                     </td>
                     {datesList.map((d) => (
-                      <td key={d} className="p-2 text-center">
+                      <td
+                        key={d}
+                        className={`p-2 text-center ${
+                          d === todayData?.date ? 'bg-amber-50/70' : ''
+                        }`}
+                      >
                         {getCellDisplay(d, member, holidayNames)}
                       </td>
                     ))}

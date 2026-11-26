@@ -104,10 +104,12 @@ export const AppLayout: React.FC = () => {
                   <SunMedium className="w-4 h-4 text-orange-500" />
                   Holidays
                 </NavLink>
-                <NavLink to="/my-team" className={navClass}>
-                  <Users className="w-4 h-4" />
-                  My Team
-                </NavLink>
+                {!isManager && (
+                  <NavLink to="/my-team" className={navClass}>
+                    <Users className="w-4 h-4" />
+                    My Team
+                  </NavLink>
+                )}
               </>
             )}
 
@@ -208,7 +210,7 @@ export const AppLayout: React.FC = () => {
         <div className="pt-4 border-t border-slate-200/80 space-y-2">
           <div className="flex items-center gap-3 px-2 py-1.5 rounded-xl bg-slate-50 border border-slate-100">
             <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 font-semibold text-xs flex items-center justify-center uppercase shrink-0">
-              {user?.name?.slice(0, 2) || 'U'}
+              {(user?.name ?? '?').slice(0, 2)}
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-xs font-semibold text-slate-800 block truncate leading-tight">
@@ -221,7 +223,7 @@ export const AppLayout: React.FC = () => {
                 user?.role,
               )}`}
             >
-              {user?.role?.replace('_', ' ')}
+              {(user?.role ?? '').replace('_', ' ')}
             </span>
           </div>
 

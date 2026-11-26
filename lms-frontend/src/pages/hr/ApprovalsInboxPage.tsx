@@ -281,7 +281,7 @@ export const ApprovalsInboxPage: React.FC = () => {
                         {req.requester?.name || 'Employee'}
                       </span>
                       <span className="text-[10px] font-semibold text-slate-400 uppercase">
-                        ({req.requester?.role?.replace('_', ' ') || 'Employee'}) &bull;{' '}
+                        ({(req.requester?.role ?? '').replace('_', ' ') || 'Employee'}) &bull;{' '}
                         {req.requester?.department || 'General'}
                       </span>
                       {!canDecide && (
@@ -344,7 +344,7 @@ export const ApprovalsInboxPage: React.FC = () => {
           setSegmentDecisions({});
         }}
         title="Review & Decide Leave Request"
-        description={`Applicant: ${selectedRequest?.requester?.name || 'Employee'} (${selectedRequest?.requester?.role?.replace('_', ' ') || 'Staff'})`}
+        description={`Applicant: ${selectedRequest?.requester?.name || 'Employee'} (${(selectedRequest?.requester?.role ?? '').replace('_', ' ') || 'Staff'})`}
       >
         {selectedRequest && (() => {
           const { canDecide, message: permissionNotice } = getPermissionStatus(selectedRequest);

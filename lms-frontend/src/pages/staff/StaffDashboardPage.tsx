@@ -210,7 +210,7 @@ export const StaffDashboardPage: React.FC = () => {
                         Approved
                       </span>
                       <span className="block text-[11px] font-medium text-slate-500 mt-1">
-                        {leave.portion?.replace('_', ' ') || 'Full day'}
+                        {(leave.portion ?? '').replace('_', ' ') || 'Full day'}
                       </span>
                     </div>
                   </div>
